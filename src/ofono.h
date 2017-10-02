@@ -25,7 +25,7 @@
 
 #include <ofono/types.h>
 
-void __ofono_exit(void);
+void __ofono_exit(int err);
 
 int __ofono_manager_init(void);
 void __ofono_manager_cleanup(void);

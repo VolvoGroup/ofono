@@ -37,15 +37,17 @@
 #define SHUTDOWN_GRACE_SECONDS 10
 
 static GMainLoop *event_loop;
+static int ret_code = 0;
 
-void __ofono_exit(void)
+void __ofono_exit(int err)
 {
+	ret_code = err;
 	g_main_loop_quit(event_loop);
 }
 
 static gboolean quit_eventloop(gpointer user_data)
 {
-	__ofono_exit();
+	__ofono_exit(GPOINTER_TO_INT(user_data));
 	return FALSE;
 }
 
@@ -73,7 +75,7 @@ static gboolean signal_handler(GIOChannel *channel, GIOCondition cond,
 		if (__terminated == 0) {
 			ofono_info("Terminating");
 			g_timeout_add_seconds(SHUTDOWN_GRACE_SECONDS,
-						quit_eventloop, NULL);
+					quit_eventloop, GINT_TO_POINTER(0));
 			__ofono_modem_shutdown();
 		}
 
@@ -168,6 +170,7 @@ int main(int argc, char **argv)
 	DBusConnection *conn;
 	DBusError error;
 	guint signal;
+	gboolean start;
 
 #ifdef NEED_THREADS
 	if (g_thread_supported() == FALSE)
@@ -241,12 +244,13 @@ int main(int argc, char **argv)
 
 	__ofono_handsfree_audio_manager_init();
 
-	__ofono_plugin_init(option_plugin, option_noplugin);
+	start = __ofono_plugin_init(option_plugin, option_noplugin) == 0;
 
 	g_free(option_plugin);
 	g_free(option_noplugin);
 
-	g_main_loop_run(event_loop);
+	if (start)
+		g_main_loop_run(event_loop);
 
 	__ofono_plugin_cleanup();
 
@@ -266,5 +270,5 @@ cleanup:
 
 	__ofono_log_cleanup();
 
-	return 0;
+	return ret_code;
 }

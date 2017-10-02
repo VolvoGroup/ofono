@@ -282,6 +282,44 @@ static void telit_mode_notify(GAtResult *result, gpointer user_data)
 	ofono_gprs_bearer_notify(gprs, bearer);
 }
 
+static void ublox_ureg_notify(GAtResult *result, gpointer user_data)
+{
+	struct ofono_gprs *gprs = user_data;
+	GAtResultIter iter;
+	gint state, bearer;
+
+	g_at_result_iter_init(&iter, result);
+
+	if (!g_at_result_iter_next(&iter, "+UREG:"))
+		return;
+
+	if (!g_at_result_iter_next_number(&iter, &state))
+		return;
+
+	switch (state) {
+	case 4:
+		bearer = 5;
+		break;
+	case 5:
+		bearer = 4;
+		break;
+	case 7:
+		/* XXX: reserved - assume none. */
+		bearer = 0;
+		break;
+	case 8:
+		bearer = 1;
+		break;
+	case 9:
+		bearer = 2;
+		break;
+	default:
+		bearer = state;
+	}
+
+	ofono_gprs_bearer_notify(gprs, bearer);
+}
+
 static void cpsb_notify(GAtResult *result, gpointer user_data)
 {
 	struct ofono_gprs *gprs = user_data;
@@ -315,6 +353,12 @@ static void gprs_initialized(gboolean ok, GAtResult *result, gpointer user_data)
 	case OFONO_VENDOR_HUAWEI:
 		g_at_chat_register(gd->chat, "^MODE:", huawei_mode_notify,
 						FALSE, gprs, NULL);
+		break;
+	case OFONO_VENDOR_UBLOX:
+		g_at_chat_register(gd->chat, "+UREG:", ublox_ureg_notify,
+						FALSE, gprs, NULL);
+		g_at_chat_send(gd->chat, "AT+UREG=1", none_prefix,
+						NULL, NULL, NULL);
 		break;
 	case OFONO_VENDOR_TELIT:
 		g_at_chat_register(gd->chat, "#PSNT:", telit_mode_notify,
@@ -395,6 +439,17 @@ retry:
 		g_at_chat_send(gd->chat, "AT+CGEREP=1", none_prefix,
 			gprs_initialized, gprs, NULL);
 		break;
+	case OFONO_VENDOR_CINTERION:
+		/*
+		 * Cinterion modems don't have AT+CGEREP, so we have to listen to the
+		 * exteneded error report URC and parse the text string in order to
+		 * figure out what's happening.
+		 * These messages will show up in the +CIEV events, where they are
+		 * parsed and then passed on to the appropriate handler.
+		 */
+		g_at_chat_send(gd->chat, "AT^SIND=\"ceer\",1,99", none_prefix,
+			gprs_initialized, gprs, NULL);
+		break;
 	default:
 		g_at_chat_send(gd->chat, "AT+CGEREP=2,1", none_prefix,
 			gprs_initialized, gprs, NULL);
@@ -432,17 +487,26 @@ static void at_cgdcont_test_cb(gboolean ok, GAtResult *result,
 		if (g_at_result_iter_next_range(&iter, &min, &max) == FALSE)
 			continue;
 
-		if (!g_at_result_iter_close_list(&iter))
-			continue;
+		/* Cinterion modems do not encapsulate the "IP" string */
+		if(gd->vendor == OFONO_VENDOR_CINTERION) {
+			if (g_at_result_iter_skip_next(&iter) == FALSE)
+				continue;
 
-		if (g_at_result_iter_open_list(&iter))
-			in_list = TRUE;
+			if (!g_at_result_iter_next_string(&iter, &pdp_type))
+				continue;
+		} else {
+			if (!g_at_result_iter_close_list(&iter))
+				continue;
+			
+			if (g_at_result_iter_open_list(&iter))
+				in_list = TRUE;
 
-		if (!g_at_result_iter_next_string(&iter, &pdp_type))
-			continue;
+			if (!g_at_result_iter_next_string(&iter, &pdp_type))
+				continue;
 
-		if (in_list && !g_at_result_iter_close_list(&iter))
-			continue;
+			if (in_list && !g_at_result_iter_close_list(&iter))
+				continue;
+		}
 
 		/* We look for IP PDPs */
 		if (g_str_equal(pdp_type, "IP"))

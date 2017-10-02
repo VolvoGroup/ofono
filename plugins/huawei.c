@@ -351,13 +351,13 @@ static gboolean parse_sysinfo_result(GAtResult *result, int *srv_status,
 
 static void shutdown_device(struct huawei_data *data)
 {
-	g_at_chat_cancel_all(data->modem);
+	g_at_chat_cancel_all(data->modem, FALSE);
 	g_at_chat_unregister_all(data->modem);
 
 	g_at_chat_unref(data->modem);
 	data->modem = NULL;
 
-	g_at_chat_cancel_all(data->pcui);
+	g_at_chat_cancel_all(data->pcui, FALSE);
 	g_at_chat_unregister_all(data->pcui);
 
 	g_at_chat_unref(data->pcui);
@@ -635,13 +635,13 @@ static int huawei_disable(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	g_at_chat_cancel_all(data->modem);
+	g_at_chat_cancel_all(data->modem, FALSE);
 	g_at_chat_unregister_all(data->modem);
 
 	g_at_chat_unref(data->modem);
 	data->modem = NULL;
 
-	g_at_chat_cancel_all(data->pcui);
+	g_at_chat_cancel_all(data->pcui, FALSE);
 	g_at_chat_unregister_all(data->pcui);
 
 	/* Cleanup potential online enable polling */

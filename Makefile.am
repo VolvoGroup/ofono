@@ -98,8 +98,6 @@ gisi_sources = gisi/client.c gisi/client.h gisi/common.h \
 btio_sources = btio/btio.h btio/btio.c
 
 if UDEV
-builtin_modules += udev
-builtin_sources += plugins/udev.c
 builtin_cflags += @UDEV_CFLAGS@
 builtin_libadd += @UDEV_LIBS@
 
@@ -190,9 +188,35 @@ builtin_sources += plugins/gobi.c
 endif
 
 if ATMODEM
+builtin_sources += $(gatchat_sources)
+else
+if CINTERIONMODEM
+builtin_sources += $(gatchat_sources)
+endif
+endif
+
+if CINTERIONMODEM
+builtin_modules += cinterionmodem
+builtin_sources += drivers/cinterionmodem/cinterionutil.h \
+			drivers/cinterionmodem/cinterionutil.c \
+			drivers/cinterionmodem/cinterionmodem.h \
+			drivers/cinterionmodem/cinterionmodem.c \
+			drivers/cinterionmodem/devinfo.c \
+			drivers/cinterionmodem/sim.c \
+			drivers/cinterionmodem/voicecall.c \
+			drivers/cinterionmodem/sms.c \
+			drivers/cinterionmodem/gprs.c \
+			drivers/cinterionmodem/gprs-context.c \
+			drivers/cinterionmodem/network-registration.c \
+			drivers/cinterionmodem/cbs.c
+
+builtin_modules += cinterionals3
+builtin_sources += plugins/cinterionals3.c
+endif
+
+if ATMODEM
 builtin_modules += atmodem
-builtin_sources += $(gatchat_sources) \
-			drivers/atmodem/atmodem.h \
+builtin_sources += drivers/atmodem/atmodem.h \
 			drivers/atmodem/atmodem.c \
 			drivers/atmodem/call-settings.c \
 			drivers/atmodem/sms.c \
@@ -419,6 +443,12 @@ builtin_sources += plugins/connman.c
 
 builtin_modules += he910
 builtin_sources += plugins/he910.c
+
+builtin_modules += quectel
+builtin_sources += plugins/quectel.c
+
+builtin_modules += ublox
+builtin_sources += plugins/ublox.c
 
 if BLUETOOTH
 if BLUEZ4

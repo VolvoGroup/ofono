@@ -265,6 +265,15 @@ static void network_operator_destroy(gpointer user_data)
 {
 	struct network_operator_data *op = user_data;
 
+	/*
+	 * If an operator scan is issued in poor reception, we can get
+	 * an array of 0 operators while being registered, which means
+	 * current_operator needs to be NULLed during delete.
+	 * This prevents a use after free scenario.
+	 */
+	if (op->netreg->current_operator == op)
+		op->netreg->current_operator = NULL;
+
 	g_free(op);
 }
 
@@ -753,8 +762,7 @@ static gboolean update_operator_list(struct ofono_netreg *netreg, int total,
 		}
 	}
 
-	g_slist_foreach(compressed, (GFunc)g_free, NULL);
-	g_slist_free(compressed);
+	g_slist_free_full(compressed, g_free);
 
 	if (n)
 		n = g_slist_reverse(n);

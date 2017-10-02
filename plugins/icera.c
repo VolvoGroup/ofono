@@ -327,7 +327,7 @@ static int icera_disable(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	g_at_chat_cancel_all(data->chat);
+	g_at_chat_cancel_all(data->chat, FALSE);
 	g_at_chat_unregister_all(data->chat);
 
 	g_at_chat_send(data->chat, "AT+CFUN=0", none_prefix,

@@ -40,7 +40,6 @@ static GSList *g_modem_list = NULL;
 
 static int next_modem_id = 0;
 static gboolean powering_down = FALSE;
-static int modems_remaining = 0;
 
 static struct ofono_watchlist *g_modemwatches = NULL;
 
@@ -179,6 +178,14 @@ const char *ofono_modem_get_path(struct ofono_modem *modem)
 {
 	if (modem)
 		return modem->path;
+
+	return NULL;
+}
+
+const struct ofono_modem_driver *ofono_modem_get_driver(struct ofono_modem *modem)
+{
+	if(modem)
+		return modem->driver;
 
 	return NULL;
 }
@@ -1175,7 +1182,7 @@ void ofono_modem_set_powered(struct ofono_modem *modem, ofono_bool_t powered)
 	modem->powered_pending = powered;
 
 	if (modem->powered == powered)
-		goto out;
+		return;
 
 	modem->powered = powered;
 	notify_powered_watches(modem);
@@ -1208,14 +1215,6 @@ void ofono_modem_set_powered(struct ofono_modem *modem, ofono_bool_t powered)
 		set_online(modem, FALSE);
 
 		modem_change_state(modem, MODEM_STATE_POWER_OFF);
-	}
-
-out:
-	if (powering_down && powered == FALSE) {
-		modems_remaining -= 1;
-
-		if (modems_remaining == 0)
-			__ofono_exit();
 	}
 }
 
@@ -2033,8 +2032,12 @@ static void modem_unregister(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	if (modem->powered == TRUE)
-		set_powered(modem, FALSE);
+	if (modem->powered == TRUE && modem->driver &&
+		modem->driver->modem_sleep)
+		modem->driver->modem_sleep(modem);
+
+	if (modem->atoms)
+		flush_atoms(modem, MODEM_STATE_POWER_OFF);
 
 	__ofono_watchlist_free(modem->atom_watches);
 	modem->atom_watches = NULL;
@@ -2048,12 +2051,10 @@ static void modem_unregister(struct ofono_modem *modem)
 	modem->sim_watch = 0;
 	modem->sim_ready_watch = 0;
 
-	g_slist_foreach(modem->interface_list, (GFunc) g_free, NULL);
-	g_slist_free(modem->interface_list);
+	g_slist_free_full(modem->interface_list, g_free);
 	modem->interface_list = NULL;
 
-	g_slist_foreach(modem->feature_list, (GFunc) g_free, NULL);
-	g_slist_free(modem->feature_list);
+	g_slist_free_full(modem->feature_list, g_free);
 	modem->feature_list = NULL;
 
 	if (modem->timeout) {
@@ -2176,6 +2177,7 @@ void ofono_modem_driver_unregister(const struct ofono_modem_driver *d)
 void __ofono_modem_shutdown(void)
 {
 	struct ofono_modem *modem;
+	ofono_bool_t powered_modems = FALSE;
 	GSList *l;
 
 	powering_down = TRUE;
@@ -2189,12 +2191,14 @@ void __ofono_modem_shutdown(void)
 		if (modem->powered == FALSE && modem->powered_pending == FALSE)
 			continue;
 
-		if (set_powered(modem, FALSE) == -EINPROGRESS)
-			modems_remaining += 1;
+		if (modem->driver && modem->driver->modem_sleep)
+			modem->driver->modem_sleep(modem);
+
+		powered_modems = TRUE;
 	}
 
-	if (modems_remaining == 0)
-		__ofono_exit();
+	if (powered_modems == FALSE)
+		__ofono_exit(0);
 }
 
 void __ofono_modem_foreach(ofono_modem_foreach_func func, void *userdata)

@@ -145,6 +145,11 @@ AC_ARG_ENABLE(atmodem, AC_HELP_STRING([--disable-atmodem],
 					[enable_atmodem=${enableval}])
 AM_CONDITIONAL(ATMODEM, test "${enable_atmodem}" != "no")
 
+AC_ARG_ENABLE(cinterionmodem, AC_HELP_STRING([--disable-cinterionmodem],
+				[disable Cinterion modem support]),
+					[enable_cinterionmodem=${enableval}])
+AM_CONDITIONAL(CINTERIONMODEM, test "${enable_cinterionmodem}" != "no")
+
 AC_ARG_ENABLE(cdmamodem, AC_HELP_STRING([--disable-cdmamodem],
 				[disable CDMA AT modem support]),
 					[enable_cdmamodem=${enableval}])

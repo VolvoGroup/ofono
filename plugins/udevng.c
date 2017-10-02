@@ -289,6 +289,105 @@ static gboolean setup_option(struct modem_info *modem)
 	return TRUE;
 }
 
+/* 
+ * The port layout on this modem is customizable.
+ * That means that the current port layout is just one of many possible.
+ * The specification for which port that is which will need editing by hand
+ * upon changes to the modem configuration.
+ */
+static gboolean setup_cinterionahx3(struct modem_info* modem)
+{
+	const char *app = NULL, *gps = NULL, *mdm = NULL, *network = NULL;
+
+	GSList *list;
+
+	DBG("%s", modem->syspath);
+
+	for (list = modem->devices; list; list = list->next) {
+		struct device_info *info = list->data;
+
+		DBG("%s %s %s %s", info->devnode, info->interface,
+						info->number, info->label);
+
+		if (g_strcmp0(info->interface, "255/255/255") == 0) {
+			if (g_strcmp0(info->number, "00") == 0)
+				app = info->devnode;
+			else if (g_strcmp0(info->number, "01") == 0)
+				gps = info->devnode;
+			/* Number "02" is reserved. */
+			else if (g_strcmp0(info->number, "03") == 0)
+				mdm = info->devnode;
+		}
+		else if (g_strcmp0(info->interface, "2/6/0") == 0) {
+			network = info->devnode;
+		}
+
+	}
+
+	DBG("application=%s gps=%s modem=%s network=%s", app, gps, mdm, network);
+
+	if (app == NULL || mdm == NULL || network == NULL)
+		return FALSE;
+
+	ofono_modem_set_string(modem->modem, "Application", app);
+	ofono_modem_set_string(modem->modem, "GPS", gps);
+	ofono_modem_set_string(modem->modem, "Modem", mdm);
+	ofono_modem_set_string(modem->modem, "NetworkInterface", network);
+
+	return TRUE;
+}
+
+static gboolean setup_cinterionals3(struct modem_info* modem)
+{
+	const char *mdm = NULL, *app = NULL, *gps = NULL, *rsa = NULL,
+											*network1 = NULL, *network2 = NULL;
+
+	GSList *list;
+
+	DBG("%s", modem->syspath);
+
+	for (list = modem->devices; list; list = list->next) {
+		struct device_info *info = list->data;
+
+		DBG("%s %s %s %s", info->devnode, info->interface,
+						info->number, info->label);
+
+		if (g_strcmp0(info->interface, "2/2/1") == 0) {
+			if (g_strcmp0(info->number, "00") == 0)
+				mdm = info->devnode;
+			else if (g_strcmp0(info->number, "02") == 0)
+				app = info->devnode;
+			else if (g_strcmp0(info->number, "04") == 0)
+				gps = info->devnode;
+			else if (g_strcmp0(info->number, "06") == 0)
+				rsa = info->devnode;
+			/* Number 08 is unknown */
+		}
+		if (g_strcmp0(info->interface, "2/6/0") == 0) {
+			if (g_strcmp0(info->number, "0a") == 0)
+				network1 = info->devnode;
+			else if (g_strcmp0(info->number, "0c") == 0)
+				network2 = info->devnode;
+		}
+	}
+
+	DBG("modem=%s application=%s gps=%s rsa=%s network1=%s network2=%s",
+									mdm, app, gps, rsa, network1, network2);
+
+	if (mdm == NULL || app == FALSE ||
+						(network1 == FALSE && network2 == FALSE))
+		return FALSE;
+
+	ofono_modem_set_string(modem->modem, "Modem", mdm);
+	ofono_modem_set_string(modem->modem, "Application", app);
+	ofono_modem_set_string(modem->modem, "GPS", gps);
+	ofono_modem_set_string(modem->modem, "RSA", rsa);
+	ofono_modem_set_string(modem->modem, "NetworkInterface1", network1);
+	ofono_modem_set_string(modem->modem, "NetworkInterface2", network2);
+
+	return TRUE;
+}
+
 static gboolean setup_huawei(struct modem_info *modem)
 {
 	const char *qmi = NULL, *mdm = NULL, *net = NULL;
@@ -791,6 +890,86 @@ static gboolean setup_samsung(struct modem_info *modem)
 	return TRUE;
 }
 
+static gboolean setup_quectel(struct modem_info *modem)
+{
+	const char *aux = NULL, *mdm = NULL;
+	GSList *list;
+
+	DBG("%s", modem->syspath);
+
+	for (list = modem->devices; list; list = list->next) {
+		struct device_info *info = list->data;
+
+		DBG("%s %s %s %s", info->devnode, info->interface,
+						info->number, info->label);
+
+		if (g_strcmp0(info->label, "aux") == 0) {
+			aux = info->devnode;
+			if (mdm != NULL)
+				break;
+		} else if (g_strcmp0(info->label, "modem") == 0) {
+			mdm = info->devnode;
+			if (aux != NULL)
+				break;
+		} else if (g_strcmp0(info->interface, "255/255/255") == 0) {
+			if (g_strcmp0(info->number, "02") == 0)
+				aux = info->devnode;
+			else if (g_strcmp0(info->number, "03") == 0)
+				mdm = info->devnode;
+		}
+	}
+
+	if (aux == NULL || mdm == NULL)
+		return FALSE;
+
+	DBG("aux=%s modem=%s", aux, mdm);
+
+	ofono_modem_set_string(modem->modem, "Aux", aux);
+	ofono_modem_set_string(modem->modem, "Modem", mdm);
+
+	return TRUE;
+}
+
+static gboolean setup_ublox(struct modem_info *modem)
+{
+	const char *aux = NULL, *mdm = NULL;
+	GSList *list;
+
+	DBG("%s", modem->syspath);
+
+	for (list = modem->devices; list; list = list->next) {
+		struct device_info *info = list->data;
+
+		DBG("%s %s %s %s", info->devnode, info->interface,
+					info->number, info->label);
+
+		if (g_strcmp0(info->label, "aux") == 0) {
+			aux = info->devnode;
+			if (mdm != NULL)
+				break;
+		} else if (g_strcmp0(info->label, "modem") == 0) {
+			mdm = info->devnode;
+			if (aux != NULL)
+				break;
+		} else if (g_strcmp0(info->interface, "2/2/1") == 0) {
+			if (g_strcmp0(info->number, "02") == 0)
+				aux = info->devnode;
+			else if (g_strcmp0(info->number, "00") == 0)
+				mdm = info->devnode;
+		}
+	}
+
+	if (aux == NULL || mdm == NULL)
+		return FALSE;
+
+	DBG("aux=%s modem=%s", aux, mdm);
+
+	ofono_modem_set_string(modem->modem, "Aux", aux);
+	ofono_modem_set_string(modem->modem, "Modem", mdm);
+
+	return TRUE;
+}
+
 static struct {
 	const char *name;
 	gboolean (*setup)(struct modem_info *modem);
@@ -815,6 +994,10 @@ static struct {
 	{ "zte",	setup_zte	},
 	{ "icera",	setup_icera	},
 	{ "samsung",	setup_samsung	},
+	{ "quectel",	setup_quectel	},
+	{ "ublox",	setup_ublox	},
+	{ "cinterionahx3",	setup_cinterionahx3	},
+	{ "cinterionals3",	setup_cinterionals3	},
 	{ }
 };
 
@@ -1026,6 +1209,12 @@ static struct {
 	{ "nokia",	"option",	"0421", "0623"	},
 	{ "samsung",	"option",	"04e8", "6889"	},
 	{ "samsung",	"kalmia"			},
+	{ "quectel",	"option",	"05c6", "9090"	},
+	{ "ublox",	"cdc_acm",	"1546", "1102"	},
+	{ "cinterionahx3",	"option",	"1e2d",	"0055"	},
+	{ "cinterionahx3",	"cdc_ether",	"1e2d",	"0055"	},
+	{ "cinterionals3",	"cdc_acm",	"1e2d",	"0061"	},
+	{ "cinterionals3",	"cdc_ether",	"1e2d",	"0061"	},
 	{ }
 };
 
@@ -1219,7 +1408,7 @@ static gboolean udev_event(GIOChannel *channel, GIOCondition cond,
 	const char *action;
 
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
-		ofono_warn("Error with udev monitor channel");
+		ofono_error("Error with udev monitor channel, cond=0x%X", cond);
 		udev_watch = 0;
 		return FALSE;
 	}
@@ -1247,7 +1436,7 @@ static gboolean udev_event(GIOChannel *channel, GIOCondition cond,
 	return TRUE;
 }
 
-static void udev_start(void)
+static int udev_start(void)
 {
 	GIOChannel *channel;
 	int fd;
@@ -1256,7 +1445,7 @@ static void udev_start(void)
 
 	if (udev_monitor_enable_receiving(udev_mon) < 0) {
 		ofono_error("Failed to enable udev monitor");
-		return;
+		return -EIO;
 	}
 
 	enumerate_devices(udev_ctx);
@@ -1265,13 +1454,15 @@ static void udev_start(void)
 
 	channel = g_io_channel_unix_new(fd);
 	if (channel == NULL)
-		return;
+		return -EIO;
 
 	udev_watch = g_io_add_watch(channel,
 				G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL,
 							udev_event, NULL);
 
 	g_io_channel_unref(channel);
+
+	return 0;
 }
 
 static int detect_init(void)
@@ -1299,9 +1490,7 @@ static int detect_init(void)
 
 	udev_monitor_filter_update(udev_mon);
 
-	udev_start();
-
-	return 0;
+	return udev_start();
 }
 
 static void detect_exit(void)

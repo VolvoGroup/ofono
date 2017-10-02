@@ -48,6 +48,7 @@
 #define VCAL_SRC_PORT -1
 #define VCAL_DST_PORT 9205
 
+static GHashTable *sms_watches = NULL;
 static unsigned int modemwatch_id;
 
 struct smart_messaging {
@@ -216,8 +217,7 @@ static DBusMessage *smart_messaging_send_vcard(DBusConnection *conn,
 	err = __ofono_sms_txq_submit(sm->sms, msg_list, flags, &uuid,
 					message_queued, msg);
 
-	g_slist_foreach(msg_list, (GFunc)g_free, NULL);
-	g_slist_free(msg_list);
+	g_slist_free_full(msg_list, g_free);
 
 	if (err < 0)
 		return __ofono_error_failed(msg);
@@ -259,8 +259,7 @@ static DBusMessage *smart_messaging_send_vcal(DBusConnection *conn,
 	err = __ofono_sms_txq_submit(sm->sms, msg_list, flags, &uuid,
 					message_queued, msg);
 
-	g_slist_foreach(msg_list, (GFunc)g_free, NULL);
-	g_slist_free(msg_list);
+	g_slist_free_full(msg_list, g_free);
 
 	if (err < 0)
 		return __ofono_error_failed(msg);
@@ -283,6 +282,16 @@ static const GDBusMethodTable smart_messaging_methods[] = {
 			smart_messaging_send_vcal) },
 	{ }
 };
+
+static gboolean atom_watch_remove(gpointer key, gpointer value,
+					gpointer user_data)
+{
+	struct ofono_modem *modem = key;
+
+	__ofono_modem_remove_atom_watch(modem, GPOINTER_TO_UINT(value));
+
+	return TRUE;
+}
 
 static void smart_messaging_cleanup(gpointer user)
 {
@@ -333,18 +342,22 @@ static void sms_watch(struct ofono_atom *atom,
 static void modem_watch(struct ofono_modem *modem, gboolean added, void *user)
 {
 	struct smart_messaging *sm;
+	int sms;
 	DBG("modem: %p, added: %d", modem, added);
 
-	if (added == FALSE)
+	if (added == FALSE) {
+		g_hash_table_remove(sms_watches, modem);
 		return;
+	}
 
 	sm = g_try_new0(struct smart_messaging, 1);
 	if (sm == NULL)
 		return;
 
 	sm->modem = modem;
-	__ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_SMS,
-					sms_watch, sm, g_free);
+	sms = __ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_SMS,
+						sms_watch, sm, g_free);
+	g_hash_table_insert(sms_watches, modem, GUINT_TO_POINTER(sms));
 }
 
 static void call_modemwatch(struct ofono_modem *modem, void *user)
@@ -355,6 +368,8 @@ static void call_modemwatch(struct ofono_modem *modem, void *user)
 static int smart_messaging_init(void)
 {
 	DBG("");
+
+	sms_watches = g_hash_table_new(g_direct_hash, g_direct_equal);
 
 	modemwatch_id = __ofono_modemwatch_add(modem_watch, NULL, NULL);
 
@@ -368,6 +383,9 @@ static void smart_messaging_exit(void)
 	DBG("");
 
 	__ofono_modemwatch_remove(modemwatch_id);
+
+	g_hash_table_foreach_remove(sms_watches, atom_watch_remove, NULL);
+	g_hash_table_destroy(sms_watches);
 }
 
 OFONO_PLUGIN_DEFINE(smart_messaging, "Smart Messaging Plugin", VERSION,

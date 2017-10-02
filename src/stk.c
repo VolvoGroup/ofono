@@ -2315,8 +2315,7 @@ static gboolean handle_command_refresh(const struct stk_command *cmd,
 			break;
 		}
 
-		g_slist_foreach(file_list, (GFunc) g_free, NULL);
-		g_slist_free(file_list);
+		g_slist_free_full(file_list, g_free);
 
 		return FALSE;
 	}
@@ -3131,6 +3130,11 @@ void ofono_stk_driver_unregister(const struct ofono_stk_driver *d)
 	g_drivers = g_slist_remove(g_drivers, (void *) d);
 }
 
+static void free_envelope_item(gpointer pointer, gpointer user_data)
+{
+	g_free(pointer);
+}
+
 static void stk_unregister(struct ofono_atom *atom)
 {
 	struct ofono_stk *stk = __ofono_atom_get_data(atom);
@@ -3163,7 +3167,7 @@ static void stk_unregister(struct ofono_atom *atom)
 		stk->main_menu = NULL;
 	}
 
-	g_queue_foreach(stk->envelope_q, (GFunc) g_free, NULL);
+	g_queue_foreach(stk->envelope_q, free_envelope_item, NULL);
 	g_queue_free(stk->envelope_q);
 
 	ofono_modem_remove_interface(modem, OFONO_STK_INTERFACE);
