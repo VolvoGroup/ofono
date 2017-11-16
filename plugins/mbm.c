@@ -375,7 +375,7 @@ static int mbm_disable(struct ofono_modem *modem)
 	if (data->modem_port == NULL)
 		return 0;
 
-	g_at_chat_cancel_all(data->modem_port, FALSE);
+	g_at_chat_cancel_all(data->modem_port);
 	g_at_chat_unregister_all(data->modem_port);
 
 	g_at_chat_send(data->modem_port, "AT+CFUN=4", NULL,

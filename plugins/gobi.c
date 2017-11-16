@@ -23,6 +23,7 @@
 #include <config.h>
 #endif
 
+#define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -33,6 +34,7 @@
 #include <ofono/modem.h>
 #include <ofono/devinfo.h>
 #include <ofono/netreg.h>
+#include <netmon.h>
 #include <ofono/phonebook.h>
 #include <ofono/voicecall.h>
 #include <ofono/sim.h>
@@ -44,9 +46,11 @@
 #include <ofono/radio-settings.h>
 #include <ofono/location-reporting.h>
 #include <ofono/log.h>
+#include <ofono/message-waiting.h>
 
 #include <drivers/qmimodem/qmi.h>
 #include <drivers/qmimodem/dms.h>
+#include <drivers/qmimodem/wda.h>
 #include <drivers/qmimodem/util.h>
 
 #define GOBI_DMS	(1 << 0)
@@ -59,6 +63,7 @@
 #define GOBI_CAT	(1 << 7)
 #define GOBI_CAT_OLD	(1 << 8)
 #define GOBI_VOICE	(1 << 9)
+#define GOBI_WDA	(1 << 10)
 
 struct gobi_data {
 	struct qmi_device *device;
@@ -167,6 +172,16 @@ static void get_oper_mode_cb(struct qmi_result *result, void *user_data)
 
 	data->oper_mode = mode;
 
+	/*
+	 * Telit QMI LTE modem must remain online. If powered down, it also
+	 * powers down the sim card, and QMI interface has no way to bring
+	 * it back alive.
+	 */
+	if (ofono_modem_get_boolean(modem, "AlwaysOnline")) {
+		ofono_modem_set_powered(modem, TRUE);
+		return;
+	}
+
 	switch (data->oper_mode) {
 	case QMI_DMS_OPER_MODE_ONLINE:
 		param = qmi_param_new_uint8(QMI_DMS_PARAM_OPER_MODE,
@@ -249,7 +264,8 @@ static void discover_cb(uint8_t count, const struct qmi_version *list,
 	DBG("");
 
 	for (i = 0; i < count; i++) {
-		DBG("%s %d.%d", list[i].name, list[i].major, list[i].minor);
+		DBG("%s %d.%d - %d", list[i].name, list[i].major, list[i].minor,
+				list[i].type);
 
 		switch (list[i].type) {
 		case QMI_SERVICE_DMS:
@@ -263,6 +279,9 @@ static void discover_cb(uint8_t count, const struct qmi_version *list,
 			break;
 		case QMI_SERVICE_WDS:
 			data->features |= GOBI_WDS;
+			break;
+		case QMI_SERVICE_WDA:
+			data->features |= GOBI_WDA;
 			break;
 		case QMI_SERVICE_PDS:
 			data->features |= GOBI_PDS;
@@ -352,6 +371,14 @@ static int gobi_disable(struct ofono_modem *modem)
 	qmi_service_cancel_all(data->dms);
 	qmi_service_unregister_all(data->dms);
 
+	/*
+	 * Telit QMI modem must remain online. If powered down, it also
+	 * powers down the sim card, and QMI interface has no way to bring
+	 * it back alive.
+	 */
+	if (ofono_modem_get_boolean(modem, "AlwaysOnline"))
+		goto out;
+
 	param = qmi_param_new_uint8(QMI_DMS_PARAM_OPER_MODE,
 					QMI_DMS_OPER_MODE_PERSIST_LOW_POWER);
 	if (!param)
@@ -361,6 +388,7 @@ static int gobi_disable(struct ofono_modem *modem)
 					power_disable_cb, modem, NULL) > 0)
 		return -EINPROGRESS;
 
+out:
 	shutdown_device(modem);
 
 	return -EINPROGRESS;
@@ -413,15 +441,22 @@ error:
 static void gobi_pre_sim(struct ofono_modem *modem)
 {
 	struct gobi_data *data = ofono_modem_get_data(modem);
+	const char *sim_driver = NULL;
 
 	DBG("%p", modem);
 
 	ofono_devinfo_create(modem, 0, "qmimodem", data->device);
 
 	if (data->features & GOBI_UIM)
-		ofono_sim_create(modem, 0, "qmimodem", data->device);
+		sim_driver = "qmimodem";
 	else if (data->features & GOBI_DMS)
-		ofono_sim_create(modem, 0, "qmimodem-legacy", data->device);
+		sim_driver = "qmimodem-legacy";
+
+	if (ofono_modem_get_boolean(modem, "ForceSimLegacy"))
+		sim_driver = "qmimodem-legacy";
+
+	if (sim_driver)
+		ofono_sim_create(modem, 0, sim_driver, data->device);
 
 	if (data->features & GOBI_VOICE)
 		ofono_voicecall_create(modem, 0, "qmimodem", data->device);
@@ -450,6 +485,15 @@ static void gobi_post_sim(struct ofono_modem *modem)
 
 	if (data->features & GOBI_WMS)
 		ofono_sms_create(modem, 0, "qmimodem", data->device);
+
+	if ((data->features & GOBI_WMS) && (data->features & GOBI_UIM) &&
+			!ofono_modem_get_boolean(modem, "ForceSimLegacy")) {
+		struct ofono_message_waiting *mw =
+					ofono_message_waiting_create(modem);
+
+		if (mw)
+			ofono_message_waiting_register(mw);
+	}
 }
 
 static void gobi_post_online(struct ofono_modem *modem)
@@ -460,8 +504,10 @@ static void gobi_post_online(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	if (data->features & GOBI_NAS)
+	if (data->features & GOBI_NAS) {
 		ofono_netreg_create(modem, 0, "qmimodem", data->device);
+		ofono_netmon_create(modem, 0, "qmimodem", data->device);
+	}
 
 	if (data->features & GOBI_VOICE)
 		ofono_ussd_create(modem, 0, "qmimodem", data->device);

@@ -1,3 +1,86 @@
+ver 1.21:
+	Fix issue with USSD notification received handling.
+	Fix issue with crashing SIM filesystem notifications.
+	Fix issue with LTE bearer reporting and Huawei modems.
+	Fix issue with invalid memory access and QMI.
+	Add support for QMI SIM writing functionality.
+	Add support for RAT selection for QMI modems.
+	Add support for network monitor agent interface.
+	Add support for Cinterion Hardware Monitor interface.
+	Add support for LTE atom driver for Huawei modems.
+	Add support for LTE atom driver for AT modems.
+	Add support for Intel xmm7xxx series modems.
+
+ver 1.20:
+	Fix issue with context removal before activation.
+	Fix issue with update during GPRS context activation.
+	Fix issue with receiving UTF-16 encoded messages.
+	Fix issue with invalid access in CBS decoding.
+	Fix issue with signal strength on QMI modems.
+	Fix issue with PIN handling with QMI modems.
+	Fix issue with QMI notification message handling.
+	Fix issue with facility lock query on SIM removal.
+	Fix issue with parsing +CLCC and +CCWA fields.
+	Add support for obtaining IMSI via EF reading.
+	Add support for additional netmon info types.
+	Add support for provisioning via configuration files.
+	Add support for Gemalto P-family series of modems.
+	Add support for Telit HE910 and UE910 variants.
+	Add support for Intel SoFIA SIM Toolkit interfaces.
+	Add support for Intel SoFIA LTE features.
+	Add support for U-Blox TOBY-L2 LTE feature.
+	Add support for dedicated LTE atom.
+
+ver 1.19:
+	Fix issue with DHCP parsing and Huawei modems.
+	Fix issue with detecting Huawei E3372 modem.
+	Fix issue with handling serving cell info.
+	Fix issue with handling SIM SC facility lock.
+	Fix issue with Android RIL PIN retry logic.
+	Fix issue with Android RIL and RAT handling.
+	Add support for Android RIL cell broadcast.
+	Add support for SoFIA 3GR thermal management.
+
+ver 1.18:
+	Fix issue with cell broadcast and use-after-fee.
+	Fix issue with repeated held call indicator.
+	Fix issue with +CCWA and connection setup.
+	Fix issue with empty operator scan results.
+	Fix issue with persistent RAT mode handling.
+	Fix issue with multiparty call introspection.
+	Fix issue with GRPS context introspection.
+	Fix issue with stale context deactivation.
+	Add support for automatic context activation.
+	Add support for SIM service provider names.
+	Add support for handling allowed APN lists.
+	Add support for network monitoring interface.
+	Add support for U-Blox TOBY-L2 modem series.
+	Add support for Sierra MC73xx QMI modems.
+	Add support for SoFIA 3GR modem series.
+	Add support for upower battery monitoring.
+	Add support for gateway audio card types.
+	Add support for Handsfree audio driver.
+	Add support for Android RIL integration.
+
+ver 1.17:
+	Fix issue with alphanumeric TP-OA handling.
+	Fix issue with push notification origin port.
+	Fix issue with reading of EF_MWIS records.
+	Fix issue with handling AT+CPINR results.
+	Fix issue with SIM state polling for Sierra modems.
+	Fix issue with HFP handling and AT command prefixes.
+	Fix issue with HFP and extra CCWA event handling.
+	Fix issue with HFP call state and +CHUP errors.
+
+ver 1.16:
+	Fix issue with PIN retry handling.
+	Fix issue with HFP and multiple calls.
+	Add support for Distracted Driving Reduction.
+	Add support for available technologies property.
+	Add support for Telit location reporting driver.
+	Add support for u-blox SARA-U270 modems.
+	Add support for Quectel UC15 modems.
+
 ver 1.15:
 	Fix issue with EF_PNN access affecting PLMN display.
 	Fix issue with SIM detection and Telit HE910 modems.

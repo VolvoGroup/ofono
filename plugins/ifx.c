@@ -616,7 +616,7 @@ static int ifx_disable(struct ofono_modem *modem)
 	DBG("%p", modem);
 
 	for (i = 0; i < NUM_DLC; i++) {
-		g_at_chat_cancel_all(data->dlcs[i], FALSE);
+		g_at_chat_cancel_all(data->dlcs[i]);
 		g_at_chat_unregister_all(data->dlcs[i]);
 	}
 

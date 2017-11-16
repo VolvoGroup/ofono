@@ -235,13 +235,13 @@ static int speedup_disable(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	g_at_chat_cancel_all(data->modem, FALSE);
+	g_at_chat_cancel_all(data->modem);
 	g_at_chat_unregister_all(data->modem);
 
 	g_at_chat_unref(data->modem);
 	data->modem = NULL;
 
-	g_at_chat_cancel_all(data->aux, FALSE);
+	g_at_chat_cancel_all(data->aux);
 	g_at_chat_unregister_all(data->aux);
 
 	g_at_chat_send(data->aux, "AT+CFUN=0", NULL,

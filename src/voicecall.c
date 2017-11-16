@@ -174,26 +174,6 @@ static const char *disconnect_reason_to_string(enum ofono_disconnect_reason r)
 	}
 }
 
-static const char *call_status_to_string(int status)
-{
-	switch (status) {
-	case CALL_STATUS_ACTIVE:
-		return "active";
-	case CALL_STATUS_HELD:
-		return "held";
-	case CALL_STATUS_DIALING:
-		return "dialing";
-	case CALL_STATUS_ALERTING:
-		return "alerting";
-	case CALL_STATUS_INCOMING:
-		return "incoming";
-	case CALL_STATUS_WAITING:
-		return "waiting";
-	default:
-		return "disconnected";
-	}
-}
-
 static const char *phone_and_clip_to_string(const struct ofono_phone_number *n,
 						int clip_validity)
 {
@@ -611,10 +591,11 @@ static DBusMessage *voicecall_hangup(DBusConnection *conn,
 		}
 
 		/*
-		 * Fall through, we check if we have a single alerting,
-		 * dialing or active call and try to hang it up with
-		 * hangup_all or hangup_active
+		 * We check if we have a single alerting, dialing or activeo
+		 * call and try to hang it up with hangup_all or hangup_active
 		 */
+
+		/* fall through */
 	case CALL_STATUS_ACTIVE:
 		if (single_call == TRUE && vc->driver->hangup_all != NULL) {
 			vc->pending = dbus_message_ref(msg);
@@ -1513,6 +1494,9 @@ static int voicecall_dial(struct ofono_voicecall *vc, const char *number,
 	if (g_slist_length(vc->call_list) >= MAX_VOICE_CALLS)
 		return -EPERM;
 
+	if (valid_ussd_string(number, vc->call_list != NULL))
+		return -EINVAL;
+
 	if (!valid_long_phone_number_format(number))
 		return -EINVAL;
 
@@ -2266,9 +2250,10 @@ void ofono_voicecall_notify(struct ofono_voicecall *vc,
 	struct voicecall *v = NULL;
 	struct ofono_call *newcall;
 
-	DBG("Got a voicecall event, status: %d, id: %u, number: %s"
-			" called_number: %s, called_name %s", call->status,
-			call->id, call->phone_number.number,
+	DBG("Got a voicecall event, status: %s (%d), id: %u, number: %s"
+			" called_number: %s, called_name %s",
+			call_status_to_string(call->status),
+			call->status, call->id, call->phone_number.number,
 			call->called_number.number, call->name);
 
 	l = g_slist_find_custom(vc->call_list, GUINT_TO_POINTER(call->id),
@@ -2659,16 +2644,25 @@ static void emulator_hfp_unregister(struct ofono_atom *atom)
 	struct ofono_voicecall *vc = __ofono_atom_get_data(atom);
 	struct ofono_modem *modem = __ofono_atom_get_modem(atom);
 
+	struct emulator_status data;
+	data.vc = vc;
+
+	data.status = OFONO_EMULATOR_CALL_INACTIVE;
 	__ofono_modem_foreach_registered_atom(modem,
 						OFONO_ATOM_TYPE_EMULATOR_HFP,
-						emulator_call_status_cb, 0);
+						emulator_call_status_cb, &data);
+
+	data.status = OFONO_EMULATOR_CALLSETUP_INACTIVE;
 	__ofono_modem_foreach_registered_atom(modem,
 						OFONO_ATOM_TYPE_EMULATOR_HFP,
 						emulator_callsetup_status_cb,
-						0);
+						&data);
+
+	data.status = OFONO_EMULATOR_CALLHELD_NONE;
 	__ofono_modem_foreach_registered_atom(modem,
 						OFONO_ATOM_TYPE_EMULATOR_HFP,
-						emulator_callheld_status_cb, 0);
+						emulator_callheld_status_cb,
+						&data);
 
 	__ofono_modem_foreach_registered_atom(modem,
 						OFONO_ATOM_TYPE_EMULATOR_HFP,
@@ -3301,6 +3295,10 @@ static void emulator_chld_cb(struct ofono_emulator *em,
 
 		ofono_emulator_send_info(em, buf, TRUE);
 		result.type = OFONO_ERROR_TYPE_NO_ERROR;
+
+		__ofono_emulator_slc_condition(em,
+					OFONO_EMULATOR_SLC_CONDITION_CHLD);
+
 		break;
 
 	case OFONO_EMULATOR_REQUEST_TYPE_QUERY:

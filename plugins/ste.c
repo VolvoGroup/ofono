@@ -215,7 +215,7 @@ static void cfun_enable(gboolean ok, GAtResult *result, gpointer user_data)
 		ofono_modem_set_powered(modem, FALSE);
 
 		for (i = 0; i < NUM_CHAT; i++) {
-			g_at_chat_cancel_all(data->chat[i], FALSE);
+			g_at_chat_cancel_all(data->chat[i]);
 			g_at_chat_unregister_all(data->chat[i]);
 			g_at_chat_unref(data->chat[i]);
 			data->chat[i] = NULL;
@@ -390,7 +390,7 @@ static int ste_disable(struct ofono_modem *modem)
 	DBG("%p", modem);
 
 	for (i = 0; i < NUM_CHAT; i++) {
-		g_at_chat_cancel_all(data->chat[i], FALSE);
+		g_at_chat_cancel_all(data->chat[i]);
 		g_at_chat_unregister_all(data->chat[i]);
 	}
 	g_at_chat_send(data->chat[AT_DEFAULT], "AT+CFUN=4", NULL,
@@ -423,9 +423,8 @@ static void ste_set_online(struct ofono_modem *modem, ofono_bool_t online,
 	if (g_at_chat_send(chat, command, NULL, set_online_cb, cbd, g_free))
 		return;
 
-	g_free(cbd);
-
 	CALLBACK_WITH_FAILURE(cb, cbd->data);
+	g_free(cbd);
 }
 
 static void ste_pre_sim(struct ofono_modem *modem)

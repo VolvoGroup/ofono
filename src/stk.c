@@ -1443,8 +1443,10 @@ static void set_get_inkey_duration(struct stk_duration *duration,
 	switch (duration->unit) {
 	case STK_DURATION_TYPE_MINUTES:
 		interval = (interval + 59) / 60;
+		break;
 	case STK_DURATION_TYPE_SECONDS:
 		interval = (interval + 9) / 10;
+		break;
 	case STK_DURATION_TYPE_SECOND_TENTHS:
 		break;
 	}
@@ -3167,8 +3169,7 @@ static void stk_unregister(struct ofono_atom *atom)
 		stk->main_menu = NULL;
 	}
 
-	g_queue_foreach(stk->envelope_q, free_envelope_item, NULL);
-	g_queue_free(stk->envelope_q);
+	g_queue_free_full(stk->envelope_q, g_free);
 
 	ofono_modem_remove_interface(modem, OFONO_STK_INTERFACE);
 	g_dbus_unregister_interface(conn, path, OFONO_STK_INTERFACE);

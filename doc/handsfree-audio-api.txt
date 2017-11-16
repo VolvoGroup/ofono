@@ -76,6 +76,22 @@ Methods		dict GetProperties()
 					 [service].Error.NotImplemented
 					 [service].Error.NotAllowed
 
+		fd, byte Acquire()
+
+			Attempts to establish the SCO audio connection
+			returning the filedescriptor of the connection and the
+			codec in use.
+
+			Note: Contrary to Connect this does not call
+			NewConnection so it can be called in a blocking
+			manner.
+
+			Possible Errors: [service].Error.InProgress
+					 [service].Error.Failed
+					 [service].Error.NotAvailable
+					 [service].Error.NotImplemented
+					 [service].Error.NotAllowed
+
 Signals		PropertyChanged(string name, variant value)
 
 			This signal indicates a changed value of the given
@@ -89,6 +105,10 @@ Properties	string RemoteAddress [readonly]
 
 			Bluetooth address of the local adapter.
 
+		string Type [readonly]
+
+			Type of the card. Valid values are "gateway" or
+			"handsfree".
 
 Handsfree Audio Agent hierarchy [experimental]
 ===============================

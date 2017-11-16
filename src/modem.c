@@ -93,6 +93,7 @@ struct ofono_devinfo {
 	char *model;
 	char *revision;
 	char *serial;
+	char *svn;
 	unsigned int dun_watch;
 	const struct ofono_devinfo_driver *driver;
 	void *driver_data;
@@ -760,8 +761,12 @@ static DBusMessage *set_property_online(struct ofono_modem *modem,
 	if (ofono_modem_get_emergency_mode(modem) == TRUE)
 		return __ofono_error_emergency_active(msg);
 
-	if (modem_is_always_online(modem) == TRUE)
-		return __ofono_error_not_implemented(msg);
+	if (modem_is_always_online(modem) == TRUE) {
+		if (online)
+			return dbus_message_new_method_return(msg);
+		else
+			return __ofono_error_not_implemented(msg);
+	}
 
 	modem->pending = dbus_message_ref(msg);
 
@@ -822,6 +827,11 @@ void __ofono_modem_append_properties(struct ofono_modem *modem,
 			ofono_dbus_dict_append(dict, "Serial",
 						DBUS_TYPE_STRING,
 						&info->serial);
+
+		if (info->svn)
+			ofono_dbus_dict_append(dict, "SoftwareVersionNumber",
+						DBUS_TYPE_STRING,
+						&info->svn);
 	}
 
 	interfaces = g_new0(char *, g_slist_length(modem->interface_list) + 1);
@@ -1342,8 +1352,8 @@ void ofono_modem_remove_interface(struct ofono_modem *modem,
 	modem->interface_update = g_idle_add(trigger_interface_update, modem);
 }
 
-static void query_serial_cb(const struct ofono_error *error,
-				const char *serial, void *user)
+static void query_svn_cb(const struct ofono_error *error,
+				const char *svn, void *user)
 {
 	struct ofono_devinfo *info = user;
 	DBusConnection *conn = ofono_dbus_get_connection();
@@ -1352,12 +1362,38 @@ static void query_serial_cb(const struct ofono_error *error,
 	if (error->type != OFONO_ERROR_TYPE_NO_ERROR)
 		return;
 
+	info->svn = g_strdup(svn);
+
+	ofono_dbus_signal_property_changed(conn, path, OFONO_MODEM_INTERFACE,
+			"SoftwareVersionNumber", DBUS_TYPE_STRING, &info->svn);
+}
+
+static void query_svn(struct ofono_devinfo *info)
+{
+	if (info->driver->query_svn == NULL)
+		return;
+
+	info->driver->query_svn(info, query_svn_cb, info);
+}
+
+static void query_serial_cb(const struct ofono_error *error,
+				const char *serial, void *user)
+{
+	struct ofono_devinfo *info = user;
+	DBusConnection *conn = ofono_dbus_get_connection();
+	const char *path = __ofono_atom_get_path(info->atom);
+
+	if (error->type != OFONO_ERROR_TYPE_NO_ERROR)
+		goto out;
+
 	info->serial = g_strdup(serial);
 
 	ofono_dbus_signal_property_changed(conn, path,
 						OFONO_MODEM_INTERFACE,
 						"Serial", DBUS_TYPE_STRING,
 						&info->serial);
+out:
+	query_svn(info);
 }
 
 static void query_serial(struct ofono_devinfo *info)
@@ -1618,6 +1654,9 @@ static void devinfo_unregister(struct ofono_atom *atom)
 
 	g_free(info->serial);
 	info->serial = NULL;
+
+	g_free(info->svn);
+	info->svn = NULL;
 }
 
 void ofono_devinfo_register(struct ofono_devinfo *info)
@@ -2131,6 +2170,9 @@ void ofono_modem_reset(struct ofono_modem *modem)
 
 	err = set_powered(modem, TRUE);
 	if (err == -EINPROGRESS)
+		return;
+
+	if (err < 0)
 		return;
 
 	modem_change_state(modem, MODEM_STATE_PRE_SIM);

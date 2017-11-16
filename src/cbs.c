@@ -1020,7 +1020,7 @@ out:
 
 	/*
 	 * In order to minimize signal transmissions we wait about X seconds
-	 * before reseting the base station id.  The hope is that we receive
+	 * before resetting the base station id.  The hope is that we receive
 	 * another cell broadcast with the new base station name within
 	 * that time
 	 */

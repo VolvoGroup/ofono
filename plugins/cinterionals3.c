@@ -370,7 +370,7 @@ static void cinterion_cfun_disable_cb(gboolean ok, GAtResult *result,
 
 	DBG("");
 
-	g_at_chat_cancel_all(data->app, FALSE);
+	g_at_chat_cancel_all(data->app);
 
 	if (ok)
 		ofono_modem_set_powered(modem, FALSE);

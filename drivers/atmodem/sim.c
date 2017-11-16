@@ -829,7 +829,7 @@ static void at_cpinr_cb(gboolean ok, GAtResult *result, gpointer user_data)
 
 		for (i = 1; i < len; i++) {
 			if (!strcmp(name, at_sim_name[i].name)) {
-				retries[i] = val;
+				retries[at_sim_name[i].type] = val;
 				break;
 			}
 		}
@@ -1264,6 +1264,7 @@ static void at_pin_retries_query(struct ofono_sim *sim,
 			return;
 		break;
 	case OFONO_VENDOR_UBLOX:
+	case OFONO_VENDOR_UBLOX_TOBY_L2:
 		if (g_at_chat_send(sd->chat, "AT+UPINCNT", upincnt_prefix,
 					upincnt_cb, cbd, g_free) > 0)
 			return;
@@ -1497,6 +1498,7 @@ static void at_pin_send_cb(gboolean ok, GAtResult *result,
 	case OFONO_VENDOR_ALCATEL:
 	case OFONO_VENDOR_HUAWEI:
 	case OFONO_VENDOR_SIMCOM:
+	case OFONO_VENDOR_SIERRA:
 		/*
 		 * On ZTE modems, after pin is entered, SIM state is checked
 		 * by polling CPIN as their modem doesn't provide unsolicited
@@ -1662,7 +1664,7 @@ static void at_lock_status_cb(gboolean ok, GAtResult *result,
 {
 	struct cb_data *cbd = user_data;
 	GAtResultIter iter;
-	ofono_sim_locked_cb_t cb = cbd->cb;
+	ofono_query_facility_lock_cb_t cb = cbd->cb;
 	struct ofono_error error;
 	int locked;
 
@@ -1687,9 +1689,9 @@ static void at_lock_status_cb(gboolean ok, GAtResult *result,
 	cb(&error, locked, cbd->data);
 }
 
-static void at_pin_query_enabled(struct ofono_sim *sim,
+static void at_query_clck(struct ofono_sim *sim,
 				enum ofono_sim_password_type passwd_type,
-				ofono_sim_locked_cb_t cb, void *data)
+				ofono_query_facility_lock_cb_t cb, void *data)
 {
 	struct sim_data *sd = ofono_sim_get_data(sim);
 	struct cb_data *cbd = cb_data_new(cb, data);
@@ -1772,7 +1774,7 @@ static struct ofono_sim_driver driver = {
 	.reset_passwd		= at_pin_send_puk,
 	.lock			= at_pin_enable,
 	.change_passwd		= at_change_passwd,
-	.query_locked		= at_pin_query_enabled,
+	.query_facility_lock	= at_query_clck,
 };
 
 static struct ofono_sim_driver driver_noef = {
@@ -1786,7 +1788,7 @@ static struct ofono_sim_driver driver_noef = {
 	.reset_passwd		= at_pin_send_puk,
 	.lock			= at_pin_enable,
 	.change_passwd		= at_change_passwd,
-	.query_locked		= at_pin_query_enabled,
+	.query_facility_lock	= at_query_clck,
 };
 
 void at_sim_init(void)

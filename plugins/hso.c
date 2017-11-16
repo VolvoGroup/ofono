@@ -382,7 +382,7 @@ static int hso_disable(struct ofono_modem *modem)
 	if (data->control == NULL)
 		return 0;
 
-	g_at_chat_cancel_all(data->control, FALSE);
+	g_at_chat_cancel_all(data->control);
 	g_at_chat_unregister_all(data->control);
 
 	g_at_chat_unref(data->modem);
