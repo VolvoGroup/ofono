@@ -34,6 +34,7 @@
 #include <gdbus.h>
 
 #include "ofono.h"
+#include "netmon.h"
 #include "netmonagent.h"
 
 #define CELL_INFO_DICT_APPEND(p_dict, key, info, type, dbus_type)	do { \

@@ -242,10 +242,9 @@ endif
 
 if ATMODEM
 builtin_sources += $(gatchat_sources)
-else
+endif
 if CINTERIONMODEM
 builtin_sources += $(gatchat_sources)
-endif
 endif
 
 if CINTERIONMODEM
@@ -535,11 +534,6 @@ builtin_sources += plugins/quectel.c
 builtin_modules += ublox
 builtin_sources += plugins/ublox.c
 
-if BLUETOOTH
-if BLUEZ4
-builtin_modules += bluez4
-builtin_sources += plugins/bluez4.c plugins/bluez4.h
-
 builtin_modules += xmm7xxx
 builtin_sources += plugins/xmm7xxx.c
 
@@ -565,6 +559,8 @@ endif
 
 if BLUETOOTH
 if BLUEZ4
+builtin_modules += bluez4
+builtin_sources += plugins/bluez4.c plugins/bluez4.h
 
 builtin_modules += hfp_ag_bluez4
 builtin_sources += plugins/hfp_ag_bluez4.c plugins/bluez4.h
