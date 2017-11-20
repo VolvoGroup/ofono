@@ -82,9 +82,6 @@ gboolean g_at_chat_set_disconnect_function(GAtChat *chat,
 gboolean g_at_chat_set_debug(GAtChat *chat,
 				GAtDebugFunc func, gpointer user_data);
 
-gboolean g_at_chat_set_timeout_handlers(gboolean (*timeout_cb)(gpointer),
-								guint (*get_timeout_func)(const char *cmd));
-
 /*!
  * Queue an AT command for execution.  The command contents are given
  * in cmd.  Once the command executes, the callback function given by

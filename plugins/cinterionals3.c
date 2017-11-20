@@ -210,7 +210,7 @@ static void cinterion_sctm_notify(GAtResult *result, gpointer user_data)
 static void cinterion_sbv_notify(GAtResult *result, gpointer user_data)
 {
 	GAtResultIter iter;
-	guint value;
+	gint value;
 
 	g_at_result_iter_init(&iter, result);
 	g_at_result_iter_next(&iter, "^SBV");
@@ -328,8 +328,6 @@ static void cinterion_remove(struct ofono_modem *modem)
 		g_source_remove(data->at_sbv_source);
 
 	ofono_modem_set_data(modem, NULL);
-
-	g_at_chat_set_timeout_handlers(NULL, NULL);
 
 	g_free(data);
 }

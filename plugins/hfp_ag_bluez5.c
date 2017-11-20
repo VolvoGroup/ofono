@@ -61,8 +61,6 @@ static GList *modems;
 static GHashTable *sim_hash = NULL;
 static GHashTable *connection_hash;
 
-void *sim_atom_watches, *vc_atom_watches; // FIXME
-
 static int hfp_card_probe(struct ofono_handsfree_card *card,
 					unsigned int vendor, void *data)
 {
@@ -376,16 +374,6 @@ static void sim_state_watch(enum ofono_sim_state new_state, void *data)
 					HFP_AG_EXT_PROFILE_PATH, NULL, 0);
 }
 
-static gboolean atom_watch_remove(gpointer key, gpointer value,
-					gpointer user_data)
-{
-	struct ofono_modem *modem = key;
-
-	__ofono_modem_remove_atom_watch(modem, GPOINTER_TO_UINT(value));
-
-	return TRUE;
-}
-
 static gboolean sim_watch_remove(gpointer key, gpointer value,
 				gpointer user_data)
 {
@@ -455,21 +443,15 @@ static void voicecall_watch(struct ofono_atom *atom,
 
 static void modem_watch(struct ofono_modem *modem, gboolean added, void *user)
 {
-	int sim, vc;
 	DBG("modem: %p, added: %d", modem, added);
 
-	if (added == FALSE) {
-		g_hash_table_remove(sim_atom_watches, modem);
-		g_hash_table_remove(vc_atom_watches, modem);
+	if (added == FALSE)
 		return;
-	}
 
-	sim = __ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_SIM,
-						sim_watch, modem, NULL);
-	vc = __ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_VOICECALL,
-						voicecall_watch, modem, NULL);
-	g_hash_table_insert(sim_atom_watches, modem, GUINT_TO_POINTER(sim));
-	g_hash_table_insert(vc_atom_watches, modem, GUINT_TO_POINTER(vc));
+	__ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_SIM,
+					sim_watch, modem, NULL);
+	__ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_VOICECALL,
+					voicecall_watch, modem, NULL);
 }
 
 static void call_modemwatch(struct ofono_modem *modem, void *user)
@@ -503,8 +485,6 @@ static int hfp_ag_init(void)
 	}
 
 	sim_hash = g_hash_table_new(g_direct_hash, g_direct_equal);
-	sim_atom_watches = g_hash_table_new(g_direct_hash, g_direct_equal);
-	vc_atom_watches = g_hash_table_new(g_direct_hash, g_direct_equal);
 
 	modemwatch_id = __ofono_modemwatch_add(modem_watch, NULL, NULL);
 	__ofono_modem_foreach(call_modemwatch, NULL);

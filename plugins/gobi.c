@@ -34,7 +34,7 @@
 #include <ofono/modem.h>
 #include <ofono/devinfo.h>
 #include <ofono/netreg.h>
-#include <netmon.h>
+#include <ofono/netmon.h>
 #include <ofono/phonebook.h>
 #include <ofono/voicecall.h>
 #include <ofono/sim.h>

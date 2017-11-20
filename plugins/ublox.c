@@ -38,8 +38,8 @@
 #include <ofono/sim.h>
 #include <ofono/gprs.h>
 #include <ofono/gprs-context.h>
-#include <netmon.h>
-#include <lte.h>
+#include <ofono/netmon.h>
+#include <ofono/lte.h>
 
 #include <drivers/atmodem/atutil.h>
 #include <drivers/atmodem/vendor.h>

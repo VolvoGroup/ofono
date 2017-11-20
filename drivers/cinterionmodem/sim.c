@@ -941,7 +941,7 @@ static struct ofono_sim_driver driver = {
 	.reset_passwd		= cint_pin_send_puk,
 	.lock			= cint_pin_enable,
 	.change_passwd		= cint_change_passwd,
-// FIXME	.query_locked		= cint_pin_query_enabled,
+	.query_facility_lock		= cint_pin_query_enabled,
 };
 
 void cint_sim_init(void)
