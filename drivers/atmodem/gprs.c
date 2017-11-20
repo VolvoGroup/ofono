@@ -614,6 +614,7 @@ static void at_cgdcont_test_cb(gboolean ok, GAtResult *result,
 			if (in_list && !g_at_result_iter_close_list(&iter))
 				continue;
 		}
+
 		if (!g_at_result_iter_skip_next(&iter))
 			continue;
 

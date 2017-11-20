@@ -279,5 +279,6 @@ cleanup:
 
 	g_free(option_debug);
 
+
 	return ret_code;
 }

@@ -60,8 +60,8 @@ static guint modemwatch_id;
 static GList *modems;
 static GHashTable *sim_hash = NULL;
 static GHashTable *connection_hash;
-static GHashTable *sim_atom_watches = NULL;
-static GHashTable *vc_atom_watches = NULL;
+
+void *sim_atom_watches, *vc_atom_watches; // FIXME
 
 static int hfp_card_probe(struct ofono_handsfree_card *card,
 					unsigned int vendor, void *data)

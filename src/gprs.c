@@ -138,7 +138,6 @@ struct pri_context {
 static void gprs_attached_update(struct ofono_gprs *gprs);
 static void gprs_netreg_update(struct ofono_gprs *gprs);
 static void gprs_deactivate_next(struct ofono_gprs *gprs);
-static void gprs_attach_callback(const struct ofono_error *error, void *data);
 
 static GSList *g_drivers = NULL;
 static GSList *g_context_drivers = NULL;
@@ -1055,15 +1054,15 @@ static void pri_set_apn_callback(const struct ofono_error *error, void *data)
 					DBUS_TYPE_STRING, &apn);
 }
 
-static DBusMessage *pri_set_apn(struct pri_context *ctx,
-					DBusConnection *conn, DBusMessage *msg,
-					const char *apn)
+static DBusMessage *pri_set_apn(struct pri_context *ctx, DBusConnection *conn,
+				DBusMessage *msg, const char *apn)
 {
 	struct ofono_gprs_context *gc;
 	GKeyFile *settings = ctx->gprs->settings;
 
 	if (strlen(apn) > OFONO_GPRS_MAX_APN_LENGTH)
 		return __ofono_error_invalid_format(msg);
+
 	if (g_str_equal(apn, ctx->context.apn))
 		return dbus_message_new_method_return(msg);
 
@@ -1388,6 +1387,7 @@ static DBusMessage *pri_set_property(DBusConnection *conn,
 
 		if (ctx->context_driver == NULL
 			&& value && assign_context(ctx, 1 /* FIXME */) == FALSE)
+
 		if (value && assign_context(ctx, 0) == FALSE)
 			return __ofono_error_not_implemented(msg);
 
@@ -2183,7 +2183,7 @@ static DBusMessage *gprs_add_context(DBusConnection *conn,
 	const char *name;
 	const char *path;
 	enum ofono_gprs_context_type type;
-	int signal; /* FIXME */
+	DBusMessage *signal;
 
 	if (!dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &typestr,
 					DBUS_TYPE_INVALID))
@@ -2345,7 +2345,6 @@ static DBusMessage *gprs_remove_context(DBusConnection *conn,
 	DBG("Unregistering context: %s", ctx->path);
 	release_context(ctx);
 	context_dbus_unregister(ctx);
-
 	gprs->contexts = g_slist_remove(gprs->contexts, ctx);
 
 	g_dbus_send_reply(conn, msg, DBUS_TYPE_INVALID);
@@ -3483,10 +3482,10 @@ static void ofono_gprs_finish_register(struct ofono_gprs *gprs)
 {
 	DBusConnection *conn = ofono_dbus_get_connection();
 	struct ofono_modem *modem = __ofono_atom_get_modem(gprs->atom);
-	struct pri_context *context;
 	const char *path = __ofono_atom_get_path(gprs->atom);
 
 	if (gprs->contexts == NULL) { /* Automatic provisioning failed */
+		struct pri_context *context;
 		context = add_context(gprs, NULL, OFONO_GPRS_CONTEXT_TYPE_INTERNET);
 		if (!assign_context(context, 1 /* FIXME */))
 			goto error;

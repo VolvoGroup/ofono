@@ -365,7 +365,7 @@ static inline void at_ack_delivery(struct ofono_sms *sms)
 	DBG("");
 
 	/* We must acknowledge the PDU using CNMA */
-		/* Cinterion modems do not take any parameters with the CNMA command.*/
+	/* Cinterion modems do not take any parameters with the CNMA command.*/
 	if (data->cnma_ack_pdu) {
 		switch (data->vendor) {
 		case OFONO_VENDOR_CINTERION:
@@ -449,8 +449,7 @@ static void at_cmt_notify(GAtResult *result, gpointer user_data)
 	if (!g_at_result_iter_next(&iter, "+CMT:"))
 		goto err;
 
-	switch(data->vendor)
-	{
+	switch (data->vendor) {
 	case OFONO_VENDOR_CINTERION:
 		if (!cint_parse_cmt(result, &hexpdu, &tpdu_len)) {
 			ofono_error("Unable to parse CMT notification");
@@ -462,6 +461,12 @@ static void at_cmt_notify(GAtResult *result, gpointer user_data)
 			ofono_error("Unable to parse CMT notification");
 			return;
 		}
+		if (!g_at_result_iter_skip_next(&iter))
+			goto err;
+
+		if (!g_at_result_iter_next_number(&iter, &tpdu_len))
+			goto err;
+
 		break;
 	}
 

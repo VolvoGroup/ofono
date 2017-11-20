@@ -313,6 +313,7 @@ done:
 	return TRUE;
 }
 
+
 static gboolean setup_option(struct modem_info *modem)
 {
 	const char *aux = NULL, *mdm = NULL, *diag = NULL;

@@ -878,6 +878,24 @@ static void cinterion_ciev_notify(GAtResult *result, gpointer user_data)
 	{
 		/* TODO: Handle "ceer" type strings, and ship them to the correct handler */
 	}
+
+	if (!g_at_result_iter_next_unquoted_string(&iter, &ind_str))
+		return;
+
+	if (!g_str_equal(signal_identifier, ind_str))
+		return;
+
+	if (!g_at_result_iter_next_number(&iter, &strength))
+		return;
+
+	DBG("rssi %d", strength);
+
+	if (strength == nd->signal_invalid)
+		strength = -1;
+	else
+		strength = (strength * 100) / (nd->signal_max - nd->signal_min);
+
+	ofono_netreg_strength_notify(netreg, strength);
 }
 
 static void ctzv_notify(GAtResult *result, gpointer user_data)

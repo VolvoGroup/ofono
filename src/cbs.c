@@ -1033,6 +1033,7 @@ out:
 		 */
 		if(cbs->reset_source)
 			g_source_remove(cbs->reset_source);
+
 		cbs->reset_source =
 			g_timeout_add_seconds(3, reset_base_station_name, cbs);
 	}
