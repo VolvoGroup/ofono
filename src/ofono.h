@@ -532,5 +532,5 @@ void __ofono_private_network_release(int id);
 ofono_bool_t __ofono_private_network_request(ofono_private_network_cb_t cb,
 						int *id, void *data);
 
-#include <netmon.h>
-#include <lte.h>
+#include <ofono/netmon.h>
+#include <ofono/lte.h>
