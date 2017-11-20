@@ -240,13 +240,6 @@ builtin_modules += gobi
 builtin_sources += plugins/gobi.c
 endif
 
-if ATMODEM
-builtin_sources += $(gatchat_sources)
-endif
-if CINTERIONMODEM
-builtin_sources += $(gatchat_sources)
-endif
-
 if CINTERIONMODEM
 builtin_modules += cinterionmodem
 builtin_sources += drivers/cinterionmodem/cinterionutil.h \
