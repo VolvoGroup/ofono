@@ -33,7 +33,6 @@
 #include <gdbus.h>
 
 #include "ofono.h"
-#include "lte.h"
 
 #include "common.h"
 #include "storage.h"
