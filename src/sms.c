@@ -762,7 +762,7 @@ static gboolean tx_next(gpointer user_data)
 		return FALSE;
 
 	if (g_queue_get_length(sms->txq) > 1
-			&& (entry->num_pdus - entry->cur_pdu) > 1)
+			|| (entry->num_pdus - entry->cur_pdu) > 1)
 		send_mms = 1;
 
 	sms->flags |= MESSAGE_MANAGER_FLAG_TXQ_ACTIVE;

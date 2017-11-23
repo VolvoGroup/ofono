@@ -1069,38 +1069,21 @@ static DBusMessage *pri_set_apn(struct pri_context *ctx, DBusConnection *conn,
 	if (is_valid_apn(apn) == FALSE)
 		return __ofono_error_invalid_format(msg);
 
-
-	/* We can end up here before the context is assigned.
-	 * If driver is NULL, try to assing a context driver.
-	 */
-	if (ctx->context_driver == NULL && assign_context(ctx, 1 /* FIXME */) == FALSE)
-		return __ofono_error_failed(msg);
-
-	gc = ctx->context_driver;
 	strcpy(ctx->context.apn, apn);
 
-	if (ctx->context_driver->driver->set_apn != NULL) {
-		ctx->pending = dbus_message_ref(msg);
+	if (settings) {
+		g_key_file_set_string(settings, ctx->key,
+					"AccessPointName", apn);
+		storage_sync(ctx->gprs->imsi, SETTINGS_STORE, settings);
+	}
 
-		ctx->context_driver->driver->set_apn(gc, ctx->context.cid, apn,
-						pri_set_apn_callback, ctx);
-	} else { /* For backwards compatibility */
-		if (g_str_equal(apn, ctx->context.apn))
-			return dbus_message_new_method_return(msg);
-
-		if (settings) {
-			g_key_file_set_string(settings, ctx->key,
-						"AccessPointName", apn);
-			storage_sync(ctx->gprs->imsi, SETTINGS_STORE, settings);
-		}
-
+	if (msg)
 		g_dbus_send_reply(conn, msg, DBUS_TYPE_INVALID);
 
-		ofono_dbus_signal_property_changed(conn, ctx->path,
+	ofono_dbus_signal_property_changed(conn, ctx->path,
 					OFONO_CONNECTION_CONTEXT_INTERFACE,
 					"AccessPointName",
 					DBUS_TYPE_STRING, &apn);
-	}
 
 	return NULL;
 }
@@ -1384,9 +1367,6 @@ static DBusMessage *pri_set_property(DBusConnection *conn,
 
 		if (ctx->gprs->flags & GPRS_FLAG_ATTACHING)
 			return __ofono_error_attach_in_progress(msg);
-
-		if (ctx->context_driver == NULL
-			&& value && assign_context(ctx, 1 /* FIXME */) == FALSE)
 
 		if (value && assign_context(ctx, 0) == FALSE)
 			return __ofono_error_not_implemented(msg);
@@ -1676,9 +1656,6 @@ static void release_active_contexts(struct ofono_gprs *gprs)
 
 		if (gc->driver->detach_shutdown != NULL)
 			gc->driver->detach_shutdown(gc, ctx->context.cid);
-
-		/* Make sure the context is properly cleared */
-		release_context(ctx);
 	}
 }
 
@@ -1689,26 +1666,6 @@ static void gprs_attached_update(struct ofono_gprs *gprs)
 	attached = gprs->driver_attached &&
 		(gprs->status == NETWORK_REGISTRATION_STATUS_REGISTERED ||
 			gprs->status == NETWORK_REGISTRATION_STATUS_ROAMING);
-
-	/*
-	 * WORKAROUND:
-	 * Sometimes in cases of trying to attach and activate context in poor
-	 * reception areas oFono can end up activating the context and lose
-	 * attach-status without the context being released.
-	 * Make sure to sync modem, driver, and oFono to a good state again.
-	 *
-	 * TODO:
-	 * Figure out how this lack of determinism occurs and fix it proper.
-	 */
-	if (attached == FALSE) {
-		gprs->bearer = -1;
-		// This breaks the property update for attached,
-		// disable until we know more about the bug it's
-		// supposed to be fixing.
-		/* gprs->attached = FALSE; */
-		//gprs->driver->set_attached(gprs, FALSE, gprs_attach_callback, gprs);
-		release_active_contexts(gprs);
-	}
 
 	if (attached == gprs->attached)
 		return;
@@ -2183,7 +2140,6 @@ static DBusMessage *gprs_add_context(DBusConnection *conn,
 	const char *name;
 	const char *path;
 	enum ofono_gprs_context_type type;
-	DBusMessage *signal;
 
 	if (!dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &typestr,
 					DBUS_TYPE_INVALID))
@@ -2200,55 +2156,11 @@ static DBusMessage *gprs_add_context(DBusConnection *conn,
 	if (context == NULL)
 		return __ofono_error_failed(msg);
 
-	/* Assign context */
-	if (!assign_context(context, 1 /* FIXME */)) {
-		context_dbus_unregister(context);
-		gprs->contexts = g_slist_remove(gprs->contexts, context);
-		return __ofono_error_failed(msg);
-	}
-
 	path = context->path;
 
 	g_dbus_send_reply(conn, msg, DBUS_TYPE_OBJECT_PATH, &path,
 					DBUS_TYPE_INVALID);
 
-	path = __ofono_atom_get_path(gprs->atom);
-	signal = dbus_message_new_signal(path,
-					OFONO_CONNECTION_MANAGER_INTERFACE,
-					"ContextAdded");
-
-	if (signal) {
-		DBusMessageIter iter;
-		DBusMessageIter var;
-		DBusMessageIter dict;
-		char typesig[5];
-		char arraysig[6];
-
-		arraysig[0] = DBUS_TYPE_ARRAY;
-		arraysig[1] = typesig[0] = DBUS_DICT_ENTRY_BEGIN_CHAR;
-		arraysig[2] = typesig[1] = DBUS_TYPE_STRING;
-		arraysig[3] = typesig[2] = DBUS_TYPE_VARIANT;
-		arraysig[4] = typesig[3] = DBUS_DICT_ENTRY_END_CHAR;
-		arraysig[5] = typesig[4] = '\0';
-
-		dbus_message_iter_init_append(signal, &iter);
-
-		path = context->path;
-		dbus_message_iter_append_basic(&iter, DBUS_TYPE_OBJECT_PATH,
-						&path);
-
-		dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT,
-					arraysig, &var);
-
-		dbus_message_iter_open_container(&var, DBUS_TYPE_ARRAY,
-					typesig,
-					&dict);
-		append_context_properties(context, &dict);
-		dbus_message_iter_close_container(&var, &dict);
-		dbus_message_iter_close_container(&iter, &var);
-
-		g_dbus_send_message(conn, signal);
-	}
 	send_context_added_signal(gprs, context, conn);
 
 	return NULL;
@@ -2343,7 +2255,6 @@ static DBusMessage *gprs_remove_context(DBusConnection *conn,
 	}
 
 	DBG("Unregistering context: %s", ctx->path);
-	release_context(ctx);
 	context_dbus_unregister(ctx);
 	gprs->contexts = g_slist_remove(gprs->contexts, ctx);
 
@@ -3484,21 +3395,18 @@ static void ofono_gprs_finish_register(struct ofono_gprs *gprs)
 	struct ofono_modem *modem = __ofono_atom_get_modem(gprs->atom);
 	const char *path = __ofono_atom_get_path(gprs->atom);
 
-	if (gprs->contexts == NULL) { /* Automatic provisioning failed */
-		struct pri_context *context;
-		context = add_context(gprs, NULL, OFONO_GPRS_CONTEXT_TYPE_INTERNET);
-		if (!assign_context(context, 1 /* FIXME */))
-			goto error;
-	} else { /* Assign the first context in the list */
-		if (!assign_context(gprs->contexts->data, 1 /* FIXME */))
-			goto error;
-	}
+	if (gprs->contexts == NULL) /* Automatic provisioning failed */
+		add_context(gprs, NULL, OFONO_GPRS_CONTEXT_TYPE_INTERNET);
 
 	if (!g_dbus_register_interface(conn, path,
 					OFONO_CONNECTION_MANAGER_INTERFACE,
 					manager_methods, manager_signals, NULL,
 					gprs, NULL)) {
-		goto error;
+		ofono_error("Could not create %s interface",
+				OFONO_CONNECTION_MANAGER_INTERFACE);
+
+		free_contexts(gprs);
+		return;
 	}
 
 	ofono_modem_add_interface(modem,
@@ -3509,14 +3417,6 @@ static void ofono_gprs_finish_register(struct ofono_gprs *gprs)
 					netreg_watch, gprs, NULL);
 
 	__ofono_atom_register(gprs->atom, gprs_unregister);
-
-	return;
-
-error:
-	ofono_error("Could not create %s interface",
-				OFONO_CONNECTION_MANAGER_INTERFACE);
-
-	free_contexts(gprs);
 }
 
 static void spn_read_cb(const char *spn, const char *dc, void *data)
@@ -3555,8 +3455,6 @@ void ofono_gprs_register(struct ofono_gprs *gprs)
 	return;
 
 finish:
-
-	gprs->powered = TRUE;
 	ofono_gprs_finish_register(gprs);
 }
 

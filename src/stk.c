@@ -3132,11 +3132,6 @@ void ofono_stk_driver_unregister(const struct ofono_stk_driver *d)
 	g_drivers = g_slist_remove(g_drivers, (void *) d);
 }
 
-static void free_envelope_item(gpointer pointer, gpointer user_data)
-{
-	g_free(pointer);
-}
-
 static void stk_unregister(struct ofono_atom *atom)
 {
 	struct ofono_stk *stk = __ofono_atom_get_data(atom);

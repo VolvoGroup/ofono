@@ -47,7 +47,7 @@
 #include <ofono/radio-settings.h>
 #include <ofono/gprs-context.h>
 #include <ofono/stk.h>
-#include <lte.h>
+#include <ofono/lte.h>
 
 #include <drivers/atmodem/atutil.h>
 #include <drivers/atmodem/vendor.h>

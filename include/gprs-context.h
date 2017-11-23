@@ -80,8 +80,8 @@ struct ofono_gprs_context_driver {
 					unsigned int id, const char *apn,
 					ofono_gprs_context_cb_t cb, void *data);
 	void (*activate_primary)(struct ofono_gprs_context *gc,
-					const struct ofono_gprs_primary_context *ctx,
-					ofono_gprs_context_cb_t cb, void *data);
+				const struct ofono_gprs_primary_context *ctx,
+				ofono_gprs_context_cb_t cb, void *data);
 	void (*deactivate_primary)(struct ofono_gprs_context *gc,
 					unsigned int id,
 					ofono_gprs_context_cb_t cb, void *data);

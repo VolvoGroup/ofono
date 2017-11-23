@@ -1025,12 +1025,6 @@ out:
 	 * that time
 	 */
 	if (lac_changed || ci_changed) {
-		/*
-		 * There are rare cases when this callback will be called more than
-		 * once between instances of reset_source getting removed from the
-		 * g_main_loop, resulting in calls to reset_base_station_name after
-		 * the struct pointed to by cbs has been free'd.
-		 */
 		if(cbs->reset_source)
 			g_source_remove(cbs->reset_source);
 

@@ -173,7 +173,7 @@ int __ofono_plugin_init(const char *pattern, const char *exclude)
 		struct ofono_plugin *plugin = list->data;
 
 		if (plugin->desc->init() < 0)
-			return -1;
+			continue;
 
 		plugin->active = TRUE;
 	}

@@ -48,7 +48,6 @@
 
 static guint modemwatch_id;
 static GList *modems;
-static GHashTable *gprs_watches = NULL;
 
 static DBusMessage *profile_new_connection(DBusConnection *conn,
 						DBusMessage *msg, void *data)
@@ -152,16 +151,6 @@ static const GDBusMethodTable profile_methods[] = {
 	{ }
 };
 
-static gboolean atom_watch_remove(gpointer key, gpointer value,
-					gpointer user_data)
-{
-	struct ofono_modem *modem = key;
-
-	__ofono_modem_remove_atom_watch(modem, GPOINTER_TO_UINT(value));
-
-	return TRUE;
-}
-
 static void gprs_watch(struct ofono_atom *atom,
 				enum ofono_atom_watch_condition cond,
 				void *data)
@@ -188,17 +177,13 @@ static void gprs_watch(struct ofono_atom *atom,
 
 static void modem_watch(struct ofono_modem *modem, gboolean added, void *user)
 {
-	int gprs;
 	DBG("modem: %p, added: %d", modem, added);
 
-	if (added == FALSE) {
-		g_hash_table_remove(gprs_watches, modem);
+	if (added == FALSE)
 		return;
-	}
 
-	gprs = __ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_GPRS,
+	__ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_GPRS,
 						gprs_watch, modem, NULL);
-	g_hash_table_insert(gprs_watches, modem, GUINT_TO_POINTER(gprs));
 }
 
 static void call_modemwatch(struct ofono_modem *modem, void *user)
@@ -225,8 +210,6 @@ static int dun_gw_init(void)
 		return -EIO;
 	}
 
-	gprs_watches = g_hash_table_new(g_direct_hash, g_direct_equal);
-
 	modemwatch_id = __ofono_modemwatch_add(modem_watch, NULL, NULL);
 
 	__ofono_modem_foreach(call_modemwatch, NULL);
@@ -245,9 +228,6 @@ static void dun_gw_exit(void)
 	bt_unregister_profile(conn, DUN_GW_EXT_PROFILE_PATH);
 	g_dbus_unregister_interface(conn, DUN_GW_EXT_PROFILE_PATH,
 						BLUEZ_PROFILE_INTERFACE);
-
-	g_hash_table_foreach_remove(gprs_watches, atom_watch_remove, NULL);
-	g_hash_table_destroy(gprs_watches);
 }
 
 OFONO_PLUGIN_DEFINE(dun_gw_bluez5, "Dial-up Networking Profile Plugins",
