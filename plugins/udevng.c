@@ -1483,7 +1483,7 @@ static void add_serial_device(struct udev_device *dev)
 	const char *subsystem;
 	struct udev_device* mdev;
 	const char* driver;
-
+	DBG("");
 	mdev = get_serial_modem_device(dev);
 	if (!mdev) {
 		DBG("Device is missing required OFONO_DRIVER property");
@@ -1721,14 +1721,17 @@ static void check_usb_device(struct udev_device *device)
 	if (syspath == NULL)
 		return;
 
+	DBG("syspath = %s", syspath);
+
 	devname = udev_device_get_devnode(usb_device);
 	if (devname == NULL)
 		return;
 
-	vendor = udev_device_get_property_value(usb_device, "ID_VENDOR_ID");
-	model = udev_device_get_property_value(usb_device, "ID_MODEL_ID");
+	DBG("devname = %s", devname);
 
-	driver = udev_device_get_property_value(usb_device, "OFONO_DRIVER");
+	vendor = udev_device_get_property_value(usb_device, "ID_VENDOR_ID");	DBG("vendor = %s", vendor);
+	model = udev_device_get_property_value(usb_device, "ID_MODEL_ID");	DBG("model = %s", model);
+	driver = udev_device_get_property_value(usb_device, "OFONO_DRIVER");	DBG("driver = %s", driver?driver:"NULL");
 	if (!driver) {
 		struct udev_device *usb_interface =
 			udev_device_get_parent_with_subsystem_devtype(
@@ -1796,7 +1799,7 @@ static void check_device(struct udev_device *device)
 		if (bus == NULL)
 			return;
 	}
-
+	DBG("check_device(): bus=%s", bus);
 	if ((g_str_equal(bus, "usb") == TRUE) ||
 			(g_str_equal(bus, "usbmisc") == TRUE))
 		check_usb_device(device);
@@ -1861,7 +1864,7 @@ static void enumerate_devices(struct udev *context)
 	while (entry) {
 		const char *syspath = udev_list_entry_get_name(entry);
 
-		ofono_debug("enumerate_devices: found device %s", syspath);
+		DBG("enumerate_devices: found device %s", syspath);
 
 		struct udev_device *device;
 
