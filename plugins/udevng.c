@@ -1860,6 +1860,9 @@ static void enumerate_devices(struct udev *context)
 	entry = udev_enumerate_get_list_entry(enumerate);
 	while (entry) {
 		const char *syspath = udev_list_entry_get_name(entry);
+
+		ofono_debug("enumerate_devices: found device %s", syspath);
+
 		struct udev_device *device;
 
 		device = udev_device_new_from_syspath(context, syspath);
