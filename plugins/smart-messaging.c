@@ -267,6 +267,54 @@ static DBusMessage *smart_messaging_send_vcal(DBusConnection *conn,
 	return NULL;
 }
 
+/*
+ * Pre-process a SMS pdu message and deliver it [D-Bus SendMessage()]
+ *
+ * @conn: D-Bus connection
+ * @msg: message data (telephone number and data)
+ * @data: SMS object to use for transmission
+ */
+static DBusMessage *sms_send_pdu_message(DBusConnection *conn, DBusMessage *msg,
+          void *data)
+{
+  struct smart_messaging *sm = data;
+  const char *to;
+  unsigned char *bytes;
+  int len;
+  GSList *msg_list;
+  unsigned int flags;
+  gboolean use_16bit_ref = FALSE;
+  int err;
+  struct ofono_uuid uuid;
+  unsigned short ref;
+
+  if (!dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &to,
+          DBUS_TYPE_ARRAY, DBUS_TYPE_BYTE,
+          &bytes, &len, DBUS_TYPE_INVALID))
+    return __ofono_error_invalid_args(msg);
+
+  if (valid_phone_number_format(to) == FALSE)
+    return __ofono_error_invalid_format(msg);
+
+  ref = __ofono_sms_get_next_ref(sm->sms);
+  msg_list = sms_pdu_prepare(to, bytes, len, ref, use_16bit_ref, TRUE);
+
+  if (msg_list == NULL)
+    return __ofono_error_invalid_format(msg);
+
+  flags = OFONO_SMS_SUBMIT_FLAG_RETRY | OFONO_SMS_SUBMIT_FLAG_EXPOSE_DBUS;
+
+  err = __ofono_sms_txq_submit(sm->sms, msg_list, flags, &uuid,
+          message_queued, msg);
+
+  g_slist_free_full(msg_list, g_free);
+
+  if (err < 0)
+    return __ofono_error_failed(msg);
+
+  return NULL;
+}
+
 static const GDBusMethodTable smart_messaging_methods[] = {
 	{ GDBUS_METHOD("RegisterAgent", GDBUS_ARGS({ "path", "o" }), NULL,
 			smart_messaging_register_agent) },
@@ -280,6 +328,10 @@ static const GDBusMethodTable smart_messaging_methods[] = {
 			GDBUS_ARGS({ "to", "s" }, { "appointment", "ay" }),
 			GDBUS_ARGS({ "path", "o" }),
 			smart_messaging_send_vcal) },
+	{ GDBUS_ASYNC_METHOD("SendPdu",
+			GDBUS_ARGS({ "to", "s" }, { "pdu", "ay" }),
+			GDBUS_ARGS({ "path", "o" }),
+			sms_send_pdu_message) },
 	{ }
 };
 

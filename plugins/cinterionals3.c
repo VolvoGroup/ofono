@@ -213,7 +213,7 @@ static void cinterion_sbv_notify(GAtResult *result, gpointer user_data)
 	guint value;
 
 	g_at_result_iter_init(&iter, result);
-	g_at_result_iter_next(&iter, "^SBV");
+	g_at_result_iter_next(&iter, "^SBV:");
 	g_at_result_iter_next_number(&iter, &value);
 
 	DBG("value=%d", value);
@@ -239,7 +239,7 @@ static void cinterion_exit_urc_notify(GAtResult *result, gpointer user_data)
 	const char *error_message;
 
 	g_at_result_iter_init(&iter, result);
-	g_at_result_iter_next(&iter, "^EXIT");
+	g_at_result_iter_next(&iter, "^EXIT:");
 	g_at_result_iter_next_unquoted_string(&iter, &error_message);
 
 	ofono_error("Modem crashed! Cause: %s", error_message);

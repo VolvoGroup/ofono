@@ -557,6 +557,11 @@ GSList *sms_datagram_prepare(const char *to,
 				gboolean use_16bit_port,
 				gboolean use_delivery_reports);
 
+GSList *sms_pdu_prepare(const char *to,
+        const unsigned char *data, unsigned int len,
+        guint16 ref, gboolean use_16bit_ref,
+        gboolean use_delivery_reports);
+
 gboolean cbs_dcs_decode(guint8 dcs, gboolean *udhi, enum sms_class *cls,
 			enum sms_charset *charset, gboolean *compressed,
 			enum cbs_language *language, gboolean *iso639);

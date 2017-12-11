@@ -3389,6 +3389,108 @@ static inline GSList *sms_list_append(GSList *l, const struct sms *in)
 }
 
 /*
+ * Prepares a pdu for transmission.  Breaks up into fragments if
+ * necessary using ref as the concatenated message reference number.
+ * Returns a list of sms messages in order.
+ *
+ * @use_delivery_reports: value for the Status-Report-Request field
+ *     (23.040 3.2.9, 9.2.2.2)
+ */
+GSList *sms_pdu_prepare(const char *to,
+        const unsigned char *data, unsigned int len,
+        guint16 ref, gboolean use_16bit_ref,
+        gboolean use_delivery_reports)
+{
+  struct sms template;
+  unsigned int offset;
+  unsigned int written;
+  unsigned int left;
+  guint8 seq;
+  GSList *r = NULL;
+
+  memset(&template, 0, sizeof(struct sms));
+  template.type = SMS_TYPE_SUBMIT;
+  template.submit.rd = FALSE;
+  template.submit.vpf = SMS_VALIDITY_PERIOD_FORMAT_RELATIVE;
+  template.submit.rp = FALSE;
+  template.submit.srr = use_delivery_reports;
+  template.submit.mr = 0;
+  template.submit.vp.relative = 0x05; /* 30 minutes */
+  template.submit.dcs = 0xF5; /* Class 1, 8 bit */
+  template.submit.udhi = (len > 140);
+  sms_address_from_string(&template.submit.daddr, to);
+
+  if (len <= 140) {
+    template.submit.udl = len;
+    memcpy(template.submit.ud, data, len);
+
+    return sms_list_append(NULL, &template);
+  }
+
+  if (use_16bit_ref) {
+    offset = 7;
+
+    template.submit.ud[0] = offset - 1;
+    template.submit.ud[1] = SMS_IEI_CONCATENATED_16BIT;
+    template.submit.ud[2] = 4;
+    template.submit.ud[3] = (ref & 0xff00) >> 8;
+    template.submit.ud[4] = ref & 0xff;
+  } else {
+    offset = 6;
+
+    template.submit.ud[0] = offset - 1;
+    template.submit.ud[1] = SMS_IEI_CONCATENATED_8BIT;
+    template.submit.ud[2] = 3;
+    template.submit.ud[3] = ref & 0xff;
+  }
+
+  seq = 0;
+  left = len;
+  written = 0;
+
+  while (left > 0) {
+    unsigned int chunk;
+
+    seq += 1;
+
+    chunk = 140 - offset;
+    if (left < chunk)
+      chunk = left;
+
+    template.submit.udl = chunk + offset;
+    memcpy(template.submit.ud + offset, data + written, chunk);
+
+    written += chunk;
+    left -= chunk;
+
+    template.submit.ud[offset - 1] = seq;
+
+    r = sms_list_append(r, &template);
+
+    if (seq == 255)
+      break;
+  }
+
+  if (left > 0) {
+    g_slist_free_full(r, g_free);
+
+    return NULL;
+  } else {
+    GSList *l;
+
+    for (l = r; l; l = l->next) {
+      struct sms *sms = l->data;
+
+      sms->submit.ud[offset - 2] = seq;
+    }
+  }
+
+  r = g_slist_reverse(r);
+
+  return r;
+}
+
+/*
  * Prepares a datagram for transmission.  Breaks up into fragments if
  * necessary using ref as the concatenated message reference number.
  * Returns a list of sms messages in order.
