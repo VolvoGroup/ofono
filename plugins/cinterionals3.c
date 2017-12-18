@@ -134,6 +134,9 @@ static GAtChat *open_device(const char *device)
 
 	/* cdc_acm driver requires that the baud rate is specifically set */
 	g_hash_table_insert(options, "Baud", "115200");
+	g_hash_table_insert(options, "RtsCts", "on");
+	g_hash_table_insert(options, "Local", "on");
+
 	channel = g_at_tty_open(device, options);
 	g_hash_table_destroy(options);
 
@@ -210,7 +213,7 @@ static void cinterion_sctm_notify(GAtResult *result, gpointer user_data)
 static void cinterion_sbv_notify(GAtResult *result, gpointer user_data)
 {
 	GAtResultIter iter;
-	guint value;
+	gint value;
 
 	g_at_result_iter_init(&iter, result);
 	g_at_result_iter_next(&iter, "^SBV:");
@@ -281,6 +284,11 @@ static int cinterion_probe(struct ofono_modem *modem)
 	ofono_modem_set_data(modem, data);
 
 	g_at_chat_send(data->app, "ATE0 +CMEE=1", none_prefix,
+		NULL, NULL, NULL);
+	/*
+	 * Needed to avoid Ctrl-Z to indicate that the modem has hung up
+	 */
+	g_at_chat_send(data->app, "AT&C0", none_prefix,
 		NULL, NULL, NULL);
 
 	g_at_chat_register(data->app, "^EXIT",
