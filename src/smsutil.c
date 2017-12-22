@@ -3407,6 +3407,7 @@ GSList *sms_pdu_prepare(const char *to,
   unsigned int left;
   guint8 seq;
   GSList *r = NULL;
+  static guint8 mr = 0;
 
   memset(&template, 0, sizeof(struct sms));
   template.type = SMS_TYPE_SUBMIT;
@@ -3414,7 +3415,7 @@ GSList *sms_pdu_prepare(const char *to,
   template.submit.vpf = SMS_VALIDITY_PERIOD_FORMAT_RELATIVE;
   template.submit.rp = FALSE;
   template.submit.srr = use_delivery_reports;
-  template.submit.mr = 0;
+  template.submit.mr = ++mr==0?++mr:mr;
   template.submit.vp.relative = 0x05; /* 30 minutes */
   template.submit.dcs = 0xF5; /* Class 1, 8 bit */
   template.submit.udhi = (len > 140);

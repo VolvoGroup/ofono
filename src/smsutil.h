@@ -497,6 +497,7 @@ gboolean sms_mwi_dcs_decode(guint8 dcs, enum sms_mwi_type *type,
 				enum sms_charset *charset,
 				gboolean *active, gboolean *discard);
 
+#define NO_PORT -1
 gboolean sms_extract_app_port(const struct sms *sms, int *dst, int *src,
 				gboolean *is_8bit);
 gboolean sms_extract_concatenation(const struct sms *sms, guint16 *ref_num,

@@ -57,6 +57,7 @@ struct smart_messaging {
 	struct sms_agent *agent;
 	unsigned int vcard_watch;
 	unsigned int vcal_watch;
+	unsigned int pdu_watch;
 };
 
 static void agent_exited(void *userdata)
@@ -71,6 +72,11 @@ static void agent_exited(void *userdata)
 	if (sm->vcal_watch > 0) {
 		__ofono_sms_datagram_watch_remove(sm->sms, sm->vcal_watch);
 		sm->vcal_watch = 0;
+	}
+
+	if (sm->pdu_watch > 0) {
+		__ofono_sms_datagram_watch_remove(sm->sms, sm->pdu_watch);
+		sm->pdu_watch = 0;
 	}
 
 	sm->agent = NULL;
@@ -102,6 +108,21 @@ static void vcal_received(const char *from, const struct tm *remote,
 		return;
 
 	sms_agent_dispatch_datagram(sm->agent, "ReceiveAppointment",
+					from, remote, local, buffer, len,
+					NULL, NULL, NULL);
+}
+
+static void pdu_received(const char *from, const struct tm *remote,
+				const struct tm *local, int dst, int src,
+				const unsigned char *buffer,
+				unsigned int len, void *data)
+{
+	struct smart_messaging *sm = data;
+
+	if (sm->agent == NULL)
+		return;
+
+	sms_agent_dispatch_datagram(sm->agent, "ReceivePdu",
 					from, remote, local, buffer, len,
 					NULL, NULL, NULL);
 }
@@ -142,6 +163,12 @@ static DBusMessage *smart_messaging_register_agent(DBusConnection *conn,
 							vcal_received,
 							VCAL_DST_PORT,
 							VCAL_SRC_PORT,
+							sm, NULL);
+
+	sm->pdu_watch = __ofono_sms_datagram_watch_add(sm->sms,
+							pdu_received,
+							NO_PORT,
+							NO_PORT,
 							sm, NULL);
 
 	return dbus_message_new_method_return(msg);
@@ -353,6 +380,7 @@ static void smart_messaging_cleanup(gpointer user)
 
 	sm->vcard_watch = 0;
 	sm->vcal_watch = 0;
+	sm->pdu_watch = 0;
 	sm->sms = NULL;
 
 	sms_agent_free(sm->agent);
