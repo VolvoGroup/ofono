@@ -1084,6 +1084,12 @@ static int cint_sms_probe(struct ofono_sms *sms, unsigned int vendor,
 	data->chat = g_at_chat_clone(chat);
 	data->modem = vendor;
 
+	/*
+	 * URC:s indicating new incoming SMS are to be sent to application-port
+	 */
+	g_at_chat_send(data->chat, "AT^SCFG=\"URC/DstIfc\",\"app\"", none_prefix,
+			NULL, NULL, NULL);
+
 	ofono_sms_set_data(sms, data);
 
 	g_at_chat_send(data->chat, "AT+CSMS=?", csms_prefix,
