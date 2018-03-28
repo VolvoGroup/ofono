@@ -302,7 +302,7 @@ retry:
 
 
 	switch (gd->modem) {
-	case CINTERION_ALS3:
+	case CINTERION_LTE:
 		g_at_chat_send(gd->chat, "AT+CGEREP=2", NULL,
 					NULL, NULL, NULL);
 		break;
@@ -359,7 +359,7 @@ static void cint_cgdcont_test_cb(gboolean ok, GAtResult *result,
 		goto error;
 
 	switch (gd->modem) {
-	case CINTERION_ALS3:
+	case CINTERION_LTE:
 	case CINTERION_GENERIC:
 		break;
 	}

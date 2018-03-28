@@ -66,31 +66,6 @@ def enable_modem():
     modem.SetProperty("Powered", dbus.Boolean(1), timeout=120)
 
 
-def set_context(apn_name):
-    print("Setting APN: %s" % apn_name)
-    modems = MANAGER.GetModems()
-    for path, properties in modems:
-        if "org.ofono.ConnectionManager" not in properties["Interfaces"]:
-            continue
-
-    connman = dbus.Interface(BUS.get_object('org.ofono', path),
-                             'org.ofono.ConnectionManager')
-
-    contexts = connman.GetContexts()
-    if len(contexts) == 0:
-        raise Exception("No context available")
-
-    path = contexts[0][0]
-    context = dbus.Interface(BUS.get_object('org.ofono', path),
-                             'org.ofono.ConnectionContext')
-
-    try:
-        context.SetProperty("AccessPointName", apn_name)
-    except dbus.DBusException:
-        print("Error setting context %s property %s" % (path, apn_name))
-        raise
-
-
 def list_contexts():
     for _ in range(0, 20):
         context_found = False

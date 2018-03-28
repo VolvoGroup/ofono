@@ -227,7 +227,7 @@ gboolean cint_util_parse_reg_unsolicited(GAtResult *result,
 
 	switch (modem) {
 	/* On ALS3 this data isn't ordered according to standard */
-	case CINTERION_ALS3:
+	case CINTERION_LTE:
 		switch (t) {
 		case 0:
 			t = 1;
@@ -311,7 +311,7 @@ gboolean cint_util_parse_reg(GAtResult *result,
 
 		switch (modem) {
 		/* On ALS3 this data isn't ordered according to standard */
-		case CINTERION_ALS3:
+		case CINTERION_LTE:
 			switch (t) {
 			case 0:
 				t = 1;
