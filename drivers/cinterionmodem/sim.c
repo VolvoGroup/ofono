@@ -896,7 +896,7 @@ static int cint_sim_probe(struct ofono_sim *sim, unsigned int vendor,
 	 * init has completed, so wait until the SIM is ready before
 	 * moving on.
 	 */
-	case CINTERION_ALS3:
+	case CINTERION_LTE:
 		sd->sim_state_query =
 			cint_util_sim_state_query_new(sd->chat,
 				2, 20, sim_state_cb, sim, NULL);

@@ -337,7 +337,7 @@ static gboolean setup_cinterionahx3(struct modem_info* modem)
 	return TRUE;
 }
 
-static gboolean setup_cinterionals3(struct modem_info* modem)
+static gboolean setup_cinterionLTE(struct modem_info* modem)
 {
 	const char *mdm = NULL, *app = NULL, *gps = NULL, *rsa = NULL,
 											*network1 = NULL, *network2 = NULL;
@@ -997,7 +997,7 @@ static struct {
 	{ "quectel",	setup_quectel	},
 	{ "ublox",	setup_ublox	},
 	{ "cinterionahx3",	setup_cinterionahx3	},
-	{ "cinterionals3",	setup_cinterionals3	},
+	{ "cinterionLTE",	setup_cinterionLTE	},
 	{ }
 };
 
@@ -1213,8 +1213,8 @@ static struct {
 	{ "ublox",	"cdc_acm",	"1546", "1102"	},
 	{ "cinterionahx3",	"option",	"1e2d",	"0055"	},
 	{ "cinterionahx3",	"cdc_ether",	"1e2d",	"0055"	},
-	{ "cinterionals3",	"cdc_acm",	"1e2d",	"0061"	},
-	{ "cinterionals3",	"cdc_ether",	"1e2d",	"0061"	},
+	{ "cinterionLTE",	"cdc_acm",	"1e2d",	"0061"	},
+	{ "cinterionLTE",	"cdc_ether",	"1e2d",	"0061"	},
 	{ }
 };
 

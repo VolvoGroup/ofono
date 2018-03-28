@@ -222,7 +222,7 @@ static void cint_cmgs(struct ofono_sms *sms, const unsigned char *pdu,
 
 	switch (data->modem) {
 	/* The LTE modem does not support CMMS=1 even though it acks it */
-	case CINTERION_ALS3:
+	case CINTERION_LTE:
 		break;
 	default:
 		if (mms) {
