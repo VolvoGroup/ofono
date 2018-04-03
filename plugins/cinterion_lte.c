@@ -82,16 +82,10 @@
  */
 
 static const char *none_prefix[] = { NULL };
-//#define SYSSTART  "^SYSSTART AIRPLANE MODE"
-#define SYSSTART  "^SYSSTART"
-static const char *atok_prefix[] = { "AT", "OK", /*SYSSTART,*/ NULL };
 
 struct cinterion_data {
 	GAtChat *app;
 	guint at_sbv_source;
-	guint at_link_source;
-	guint at_enable_source;
-	gboolean at_ok;
 };
 
 static void cinterion_debug(const char *str, void *user_data)
@@ -129,7 +123,7 @@ static GAtChat *open_device(const char *device)
 	GAtChat *chat;
 	GHashTable *options;
 
-	DBG("%s", device);
+	DBG("Opening device %s", device);
 
 	options = g_hash_table_new(g_str_hash, g_str_equal);
 	if (options == NULL)
@@ -138,13 +132,22 @@ static GAtChat *open_device(const char *device)
 	/* cdc_acm driver requires that the baud rate is specifically set */
 	g_hash_table_insert(options, "Baud", "115200");
 	g_hash_table_insert(options, "RtsCts", "on");
-	g_hash_table_insert(options, "Local", "off");
+	g_hash_table_insert(options, "Local", "on");
 
 	channel = g_at_tty_open(device, options);
 	g_hash_table_destroy(options);
 
 	if (channel == NULL)
 		return NULL;
+
+	/*
+	 * The modem will ignore any command before ^SYSSTART, since oFono may
+	 * have crashed, or the modem already being booted for whatever reason,
+	 * we cannot simply wait for the URC, in that case we would wait
+	 * forever. Instead, we send an AT, then wait until we receive some
+	 * data. Any data at all is enough, we're just waiting for a the
+	 * interface to be responsive.
+	 */
 
 	/*
 	 * NOTE:
@@ -236,56 +239,16 @@ static gboolean cinterion_sbv_poll(gpointer user_data)
 	return TRUE;
 }
 
-
-static void atok_check_cb(gboolean ok, GAtResult *result,
-							gpointer user_data) {
-	struct cinterion_data *data = user_data;
-	GSList *p;
-	DBG("ok=%d, data at %p", ok, data);
-	DBG("final_or_pdu ='%s'", result->final_or_pdu);
-	for (p=result->lines; p; p = p->next)
-		DBG("lines: %s", (char*)p->data);
-//	if (!ok)
-//		g_at_chat_send((GAtChat*)chat, "AT", none_prefix, atok_check_cb, (GAtChat*)chat, NULL);
-	data->at_ok = TRUE;
-}
-
-static gboolean atok_checker(gpointer user_data) { // Expects struct ofono_modem
-	struct cinterion_data *data = (struct cinterion_data *)ofono_modem_get_data(user_data);
-
-	DBG("data at %p", data);
-	g_at_chat_send(data->app, "AT", atok_prefix, atok_check_cb, data, NULL);
-	DBG("returning %d", !data->at_ok);
-	return !data->at_ok;
-}
-
-static void notifierBastard(GAtResult *result, gpointer user_data) {
-	struct ofono_modem *modem = user_data;
-	struct cinterion_data *data = ofono_modem_get_data(modem);
-	GSList *p;
-	DBG("at_link_source = %d", data->at_link_source);
-	DBG("final_or_pdu ='%s'", result->final_or_pdu);
-	for (p=result->lines; p; p = p->next)
-		DBG("lines: %s", (char*)p->data);
-	data->at_ok = FALSE;
-	data->at_link_source = g_timeout_add_seconds(1, atok_checker, modem);
-}
-/* Detect existence of device and initialize any device-specific data
- * structures */
 static int cinterion_probe(struct ofono_modem *modem)
 {
 	struct cinterion_data *data;
 	const char *app;
 
-	guint FIXME;
 	DBG("%p", modem);
 
 	data = g_try_new0(struct cinterion_data, 1);
 	if (data == NULL)
 		return -ENOMEM;
-
-	data->at_ok = FALSE;
-	data->at_link_source = 0;
 
 	app = ofono_modem_get_string(modem, "Application");
 
@@ -299,22 +262,41 @@ static int cinterion_probe(struct ofono_modem *modem)
 
 	ofono_modem_set_data(modem, data);
 
-	//atok_checker(data);
-	DBG("chat at %p, at_link_source = %d", data->app, data->at_link_source);
-	data->at_link_source = g_timeout_add_seconds(1, atok_checker, modem);
-	DBG("chat at %p, at_link_source = %d", data->app, data->at_link_source);
-
-	FIXME = g_at_chat_register(data->app, SYSSTART,
-					notifierBastard, //GAtNotifyFunc func,
-					FALSE, //gboolean expect_pdu,
-					modem, //gpointer user_data,
-					NULL //GDestroyNotify destroy_notify
-					);
-	DBG("notifier = %d", FIXME);
-	g_at_chat_add_terminator(data->app, SYSSTART, -1, TRUE);
 	g_at_chat_set_wakeup_command(data->app, "AT\r", 500, 5000);
 
-	DBG("leaving");
+	/* No command echo, numeric error codes */
+	g_at_chat_send(data->app, "ATE0 +CMEE=1", none_prefix,
+		NULL, NULL, NULL);
+	/*
+	 * Needed to avoid Ctrl-Z to indicate that the modem has hung up
+	 */
+	g_at_chat_send(data->app, "AT&C0", none_prefix,
+		NULL, NULL, NULL);
+
+	g_at_chat_register(data->app, "^EXIT",
+		cinterion_exit_urc_notify, FALSE, NULL, NULL);
+
+	/*
+	 * Listen to Over/Under temperature URCs
+	 * Piggy-back on the URC handler for the replies from the query command
+	 */
+	g_at_chat_register(data->app, "^SCTM:",
+		cinterion_sctm_notify, FALSE, GINT_TO_POINTER(1), NULL);
+	g_at_chat_register(data->app, "^SCTM_B:",
+		cinterion_sctm_notify, FALSE, NULL, NULL);
+	/* Listen to Over/Under voltage URCs */
+	g_at_chat_register(data->app, "^SBV:",
+		cinterion_sbv_notify, FALSE, NULL, NULL);
+	g_at_chat_register(data->app, "^SBC:",
+		cinterion_sbc_notify, FALSE, NULL, NULL);
+
+	/*
+	 * Enable over/under temperature warning URCs
+	 * in addition to the critical
+	 */
+	g_at_chat_send(data->app, "AT^SCTM=1", none_prefix, NULL, NULL, NULL);
+	g_at_chat_send(data->app, "AT^SCTM?", none_prefix, NULL, NULL, NULL);
+
 	return 0;
 }
 
@@ -329,8 +311,10 @@ static void cinterion_remove(struct ofono_modem *modem)
 	g_at_chat_unref(data->app);
 	data->app = NULL;
 
-	if (data->at_sbv_source)
+	if (data->at_sbv_source) {
 		g_source_remove(data->at_sbv_source);
+		data->at_sbv_source = 0;
+	}
 
 	ofono_modem_set_data(modem, NULL);
 
@@ -339,80 +323,78 @@ static void cinterion_remove(struct ofono_modem *modem)
 	g_free(data);
 }
 
-static void cinterion_cfun_enable_cb(gboolean ok, GAtResult *result,
-						gpointer user_data)
-{
-	struct ofono_modem *modem = user_data;
+struct FIXME {
+	gboolean ok;
+	GAtResult *result;
+	gpointer user_data;
+	gboolean do_poll;
+};
+static void cinterion_sim_cb(gboolean ok, GAtResult *result, gpointer user_data) {
+	struct FIXME *params = user_data;
+	GSList *lines;
+	DBG("ok=%d", ok);
+	DBG("result->final_or_pdu = %s", result->final_or_pdu);
+	for (lines=result->lines; lines; lines = lines->next)
+		DBG("lines: %s", (char*)lines->data);
+
+	if (ok) {
+		struct ofono_modem *modem = params->user_data;
+		struct cinterion_data *data = ofono_modem_get_data(modem);
+		if (!ok) {
+			ofono_modem_set_powered(modem, params->ok);
+			return;
+		}
+
+		data->at_sbv_source =
+			g_timeout_add_seconds(60, cinterion_sbv_poll, data);
+			ofono_modem_set_powered(modem, params->ok);
+	}
+	params->do_poll = !ok;
+}
+
+
+static gboolean cinterion_sim_poll(gpointer user_data) {
+	struct FIXME *params = user_data;
+	struct ofono_modem *modem = params->user_data;
 	struct cinterion_data *data = ofono_modem_get_data(modem);
 
 	DBG("");
 
-	if(!ok) {
-		ofono_modem_set_powered(modem, ok);
-		return;
+	if (params->do_poll)
+		g_at_chat_send(data->app, "AT+CPIN?", none_prefix, cinterion_sim_cb, params, NULL);
+
+	return params->do_poll;
+}
+
+static void cinterion_cfun_enable_cb(gboolean ok, GAtResult *result,
+						gpointer user_data)
+{
+	static struct FIXME params; // FIXME reentrancy
+
+	DBG("");
+	if (ok) {
+		params.ok = ok;
+		params.result = result;
+		params.user_data = user_data;
+		params.do_poll = TRUE;
+		g_timeout_add_seconds(5, cinterion_sim_poll, &params);
 	}
-
-	data->at_sbv_source =
-		g_timeout_add_seconds(60, cinterion_sbv_poll, data);
-
-	ofono_modem_set_powered(modem, ok);
 }
 
-static gboolean cinterion_cfun_enable_do(gpointer user_data) {
-	struct ofono_modem *modem = user_data;
+static int cinterion_enable(struct ofono_modem *modem)
+{
 	struct cinterion_data *data = ofono_modem_get_data(modem);
-	if (data->at_ok) {
-		if (data->at_sbv_source)
-			g_source_remove(data->at_sbv_source);
 
-		g_at_chat_send(data->app, "AT+CFUN=4", none_prefix,
-				cinterion_cfun_enable_cb, modem, NULL);
-
-		g_at_chat_send(data->app, "ATE0 +CMEE=1", none_prefix,
-			NULL, NULL, NULL);
-		/*
-		 * Needed to avoid Ctrl-Z to indicate that the modem has hung up
-		 */
-		g_at_chat_send(data->app, "AT&C0", none_prefix,
-			NULL, NULL, NULL); // +CME ERROR: operation not supported
-
-		g_at_chat_register(data->app, "^EXIT",
-			cinterion_exit_urc_notify, FALSE, NULL, NULL);
-
-		/*
-		 * Listen to Over/Under temperature URCs
-		 * Piggy-back on the URC handler for the replies from the query command
-		 */
-		g_at_chat_register(data->app, "^SCTM:",
-			cinterion_sctm_notify, FALSE, GINT_TO_POINTER(1), NULL);
-		g_at_chat_register(data->app, "^SCTM_B:",
-			cinterion_sctm_notify, FALSE, NULL, NULL);
-		/* Listen to Over/Under voltage URCs */
-		g_at_chat_register(data->app, "^SBV:",
-			cinterion_sbv_notify, FALSE, NULL, NULL);
-		g_at_chat_register(data->app, "^SBC:",
-			cinterion_sbc_notify, FALSE, NULL, NULL);
-
-		/*
-		 * Enable over/under temperature warning URCs
-		 * in addition to the critical
-		 */
-		g_at_chat_send(data->app, "AT^SCTM=1", none_prefix, NULL, NULL, NULL);
-		g_at_chat_send(data->app, "AT^SCTM?", none_prefix, NULL, NULL, NULL);
-		return FALSE;
-	}	else {
-			return TRUE; /* Anotherr try */
-		}
-}
-
-static int cinterion_enable(struct ofono_modem *modem) {
-	struct cinterion_data *data = ofono_modem_get_data(modem);
 	DBG("%p", modem);
-	if (data->at_ok) {
-		cinterion_cfun_enable_do(modem);
-	} else {
-		data->at_enable_source = g_timeout_add_seconds(1, cinterion_cfun_enable_do, modem);
+
+	if (data->at_sbv_source) {
+		g_source_remove(data->at_sbv_source);
+		data->at_sbv_source = 0;
 	}
+
+	g_at_chat_send(data->app, "AT+CFUN=4", none_prefix,
+			cinterion_cfun_enable_cb, modem, NULL);
+
 	return -EINPROGRESS;
 }
 
