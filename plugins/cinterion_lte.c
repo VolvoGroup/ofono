@@ -323,14 +323,13 @@ static void cinterion_remove(struct ofono_modem *modem)
 	g_free(data);
 }
 
-struct FIXME {
-	gboolean ok;
-	GAtResult *result;
+struct sim_poll_data {
 	gpointer user_data;
 	gboolean do_poll;
 };
+
 static void cinterion_sim_cb(gboolean ok, GAtResult *result, gpointer user_data) {
-	struct FIXME *params = user_data;
+	struct sim_poll_data *params = user_data;
 	GSList *lines;
 	DBG("ok=%d", ok);
 	DBG("result->final_or_pdu = %s", result->final_or_pdu);
@@ -340,21 +339,17 @@ static void cinterion_sim_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	if (ok) {
 		struct ofono_modem *modem = params->user_data;
 		struct cinterion_data *data = ofono_modem_get_data(modem);
-		if (!ok) {
-			ofono_modem_set_powered(modem, params->ok);
-			return;
-		}
 
 		data->at_sbv_source =
 			g_timeout_add_seconds(60, cinterion_sbv_poll, data);
-			ofono_modem_set_powered(modem, params->ok);
+		ofono_modem_set_powered(modem, ok);
 	}
 	params->do_poll = !ok;
 }
 
 
 static gboolean cinterion_sim_poll(gpointer user_data) {
-	struct FIXME *params = user_data;
+	struct sim_poll_data *params = user_data;
 	struct ofono_modem *modem = params->user_data;
 	struct cinterion_data *data = ofono_modem_get_data(modem);
 
@@ -369,12 +364,10 @@ static gboolean cinterion_sim_poll(gpointer user_data) {
 static void cinterion_cfun_enable_cb(gboolean ok, GAtResult *result,
 						gpointer user_data)
 {
-	static struct FIXME params; // FIXME reentrancy
+	static struct sim_poll_data params; // FIXME reentrancy
 
 	DBG("");
 	if (ok) {
-		params.ok = ok;
-		params.result = result;
 		params.user_data = user_data;
 		params.do_poll = TRUE;
 		g_timeout_add_seconds(5, cinterion_sim_poll, &params);
