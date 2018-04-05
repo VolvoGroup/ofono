@@ -1255,6 +1255,8 @@ static gboolean trigger_interface_update(void *data)
 
 	modem->interface_update = 0;
 
+	DBG("trigger_interface_update");
+
 	return FALSE;
 }
 
@@ -1292,6 +1294,7 @@ void ofono_modem_add_interface(struct ofono_modem *modem,
 {
 	const char *feature;
 
+	DBG("Add interface: %s", interface);
 	modem->interface_list = g_slist_prepend(modem->interface_list,
 						g_strdup(interface));
 
@@ -1304,6 +1307,7 @@ void ofono_modem_add_interface(struct ofono_modem *modem,
 		return;
 
 	modem->interface_update = g_idle_add(trigger_interface_update, modem);
+	DBG("Interface: %s added", interface);
 }
 
 void ofono_modem_remove_interface(struct ofono_modem *modem,

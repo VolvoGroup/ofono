@@ -606,7 +606,7 @@ static void cint_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	}
 
 	switch (nd->modem) {
-	case CINTERION_ALS3:
+	case CINTERION_LTE:
 		/*
 		 * The ALS3 modem has no URC for signal strength,
 		 * we'll need to poll. Ask the modem every 5 seconds.
@@ -614,7 +614,7 @@ static void cint_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		g_at_chat_register(nd->chat, "+CSQ:", cint_csq_notify,
 						FALSE, netreg, NULL);
 		nd->csq_source =
-			g_timeout_add_seconds(5, cint_csq_query, netreg);
+			g_timeout_add_seconds(30, cint_csq_query, netreg);
 
 		g_at_chat_register(nd->chat, "+CREG:",
 				creg_notify, FALSE, netreg, NULL);

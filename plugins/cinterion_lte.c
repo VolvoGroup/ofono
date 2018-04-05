@@ -101,7 +101,7 @@ static guint cinterion_get_command_timeout(const char* cmd)
 	 * Some AT commands may take a longer time to complete during certain
 	 * conditions than what the recommendation says to allow.
 	 * These AT commands need to have longer timeouts to prevent the modem
-	 * from wronly resetting.
+	 * from wrongly resetting.
 	 * The recommendation is to reset the modem after 5 seconds of no reply.
 	 */
 	if (strstr(cmd, "AT+CGDCONT") != 0)
@@ -122,9 +122,6 @@ static GAtChat *open_device(const char *device)
 	GIOChannel *channel;
 	GAtChat *chat;
 	GHashTable *options;
-	GIOStatus status;
-	gchar buffer[64];
-	gsize bytes_written;
 
 	DBG("Opening device %s", device);
 
@@ -151,26 +148,6 @@ static GAtChat *open_device(const char *device)
 	 * data. Any data at all is enough, we're just waiting for a the
 	 * interface to be responsive.
 	 */
-	status = g_io_channel_write_chars(channel, "AT\r", 3,
-					&bytes_written, NULL);
-	if (status != G_IO_STATUS_NORMAL) {
-		g_io_channel_unref(channel);
-		return NULL;
-	}
-
-	while (TRUE) {
-		status = g_io_channel_read_chars(channel, buffer,
-					sizeof(buffer), &bytes_written, NULL);
-
-		if (status == G_IO_STATUS_NORMAL)
-			break;
-		else if (status == G_IO_STATUS_AGAIN)
-			continue;
-
-		g_io_channel_unref(channel);
-		return NULL;
-	}
-
 
 	/*
 	 * NOTE:
@@ -186,6 +163,11 @@ static GAtChat *open_device(const char *device)
 
 	if (chat == NULL)
 		return NULL;
+
+	if (getenv("OFONO_AT_DEBUG")) {
+		g_at_chat_set_debug(chat, cinterion_debug, "App: ");
+		DBG("Enabled AT logging.");
+	}
 
 	return chat;
 }
@@ -278,11 +260,11 @@ static int cinterion_probe(struct ofono_modem *modem)
 	if (data->app == NULL)
 		return -EIO;
 
-	if (getenv("OFONO_AT_DEBUG"))
-		g_at_chat_set_debug(data->app, cinterion_debug, "App: ");
-
 	ofono_modem_set_data(modem, data);
 
+	g_at_chat_set_wakeup_command(data->app, "AT\r", 500, 5000);
+
+	/* No command echo, numeric error codes */
 	g_at_chat_send(data->app, "ATE0 +CMEE=1", none_prefix,
 		NULL, NULL, NULL);
 	/*
@@ -315,9 +297,6 @@ static int cinterion_probe(struct ofono_modem *modem)
 	g_at_chat_send(data->app, "AT^SCTM=1", none_prefix, NULL, NULL, NULL);
 	g_at_chat_send(data->app, "AT^SCTM?", none_prefix, NULL, NULL, NULL);
 
-	data->at_sbv_source =
-		g_timeout_add_seconds(5, cinterion_sbv_poll, data);
-
 	return 0;
 }
 
@@ -332,8 +311,10 @@ static void cinterion_remove(struct ofono_modem *modem)
 	g_at_chat_unref(data->app);
 	data->app = NULL;
 
-	if (data->at_sbv_source)
+	if (data->at_sbv_source) {
 		g_source_remove(data->at_sbv_source);
+		data->at_sbv_source = 0;
+	}
 
 	ofono_modem_set_data(modem, NULL);
 
@@ -342,20 +323,55 @@ static void cinterion_remove(struct ofono_modem *modem)
 	g_free(data);
 }
 
-static void cinterion_cfun_enable_cb(gboolean ok, GAtResult *result,
-						gpointer user_data)
-{
-	struct ofono_modem *modem = user_data;
+struct sim_poll_data {
+	gpointer user_data;
+	gboolean do_poll;
+};
+
+static void cinterion_sim_cb(gboolean ok, GAtResult *result, gpointer user_data) {
+	struct sim_poll_data *params = user_data;
+	GSList *lines;
+	DBG("ok=%d", ok);
+	DBG("result->final_or_pdu = %s", result->final_or_pdu);
+	for (lines=result->lines; lines; lines = lines->next)
+		DBG("lines: %s", (char*)lines->data);
+
+	if (ok) {
+		struct ofono_modem *modem = params->user_data;
+		struct cinterion_data *data = ofono_modem_get_data(modem);
+
+		data->at_sbv_source =
+			g_timeout_add_seconds(60, cinterion_sbv_poll, data);
+		ofono_modem_set_powered(modem, ok);
+	}
+	params->do_poll = !ok;
+}
+
+
+static gboolean cinterion_sim_poll(gpointer user_data) {
+	struct sim_poll_data *params = user_data;
+	struct ofono_modem *modem = params->user_data;
 	struct cinterion_data *data = ofono_modem_get_data(modem);
 
 	DBG("");
 
-	if(!ok) {
-		ofono_modem_set_powered(modem, ok);
-		return;
-	}
+	if (params->do_poll)
+		g_at_chat_send(data->app, "AT+CPIN?", none_prefix, cinterion_sim_cb, params, NULL);
 
-	ofono_modem_set_powered(modem, TRUE);
+	return params->do_poll;
+}
+
+static void cinterion_cfun_enable_cb(gboolean ok, GAtResult *result,
+						gpointer user_data)
+{
+	static struct sim_poll_data params; // FIXME reentrancy
+
+	DBG("");
+	if (ok) {
+		params.user_data = user_data;
+		params.do_poll = TRUE;
+		g_timeout_add_seconds(5, cinterion_sim_poll, &params);
+	}
 }
 
 static int cinterion_enable(struct ofono_modem *modem)
@@ -363,6 +379,11 @@ static int cinterion_enable(struct ofono_modem *modem)
 	struct cinterion_data *data = ofono_modem_get_data(modem);
 
 	DBG("%p", modem);
+
+	if (data->at_sbv_source) {
+		g_source_remove(data->at_sbv_source);
+		data->at_sbv_source = 0;
+	}
 
 	g_at_chat_send(data->app, "AT+CFUN=4", none_prefix,
 			cinterion_cfun_enable_cb, modem, NULL);
@@ -442,7 +463,7 @@ static void cinterion_pre_sim(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	sim = ofono_sim_create(modem, CINTERION_ALS3,
+	sim = ofono_sim_create(modem, CINTERION_LTE,
 				"cinterionmodem", data->app);
 
 	if (sim)
@@ -457,14 +478,14 @@ static void cinterion_post_sim(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	ofono_devinfo_create(modem, CINTERION_ALS3,
+	ofono_devinfo_create(modem, CINTERION_LTE,
 				"cinterionmodem", data->app);
 
-	ofono_sms_create(modem, CINTERION_ALS3, "cinterionmodem", data->app);
+	ofono_sms_create(modem, CINTERION_LTE, "cinterionmodem", data->app);
 
-	gprs = ofono_gprs_create(modem, CINTERION_ALS3,
+	gprs = ofono_gprs_create(modem, CINTERION_LTE,
 				"cinterionmodem", data->app);
-	gc = ofono_gprs_context_create(modem, CINTERION_ALS3,
+	gc = ofono_gprs_context_create(modem, CINTERION_LTE,
 					"cinterionmodem", data->app);
 
 	if (gprs && gc)
@@ -477,10 +498,10 @@ static void cinterion_post_online(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	ofono_voicecall_create(modem, CINTERION_ALS3,
+	ofono_voicecall_create(modem, CINTERION_LTE,
 				"cinterionmodem", data->app);
 
-	ofono_netreg_create(modem, CINTERION_ALS3,
+	ofono_netreg_create(modem, CINTERION_LTE,
 				"cinterionmodem", data->app);
 }
 
@@ -532,7 +553,7 @@ static void cinterion_shutdown(struct ofono_modem *modem)
 }
 
 static struct ofono_modem_driver cinterion_driver = {
-	.name		= "cinterionals3",
+	.name		= "cinterionLTE",
 	.probe		= cinterion_probe,
 	.remove		= cinterion_remove,
 	.enable		= cinterion_enable,
@@ -555,6 +576,6 @@ static void cinterion_exit(void)
 	ofono_modem_driver_unregister(&cinterion_driver);
 }
 
-OFONO_PLUGIN_DEFINE(cinterionals3, "Cinterion ALS3 modem driver",
+OFONO_PLUGIN_DEFINE(cinterion_lte, "Cinterion LTE modem driver",
 			VERSION, OFONO_PLUGIN_PRIORITY_DEFAULT,
 			cinterion_init, cinterion_exit)

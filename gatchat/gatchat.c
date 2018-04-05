@@ -31,12 +31,14 @@
 #include <errno.h>
 
 #include <glib.h>
+#include <ofono.h>
 
 #include "ringbuffer.h"
 #include "gatchat.h"
 #include "gatio.h"
 
 /* #define WRITE_SCHEDULER_DEBUG 1 */
+#define AT_COMMAND_DEBUG 1
 
 #define COMMAND_FLAG_EXPECT_PDU			0x1
 #define COMMAND_FLAG_EXPECT_SHORT_PROMPT	0x2
@@ -245,6 +247,10 @@ static struct at_command *at_command_create(guint gid, const char *cmd,
 	struct at_command *c;
 	gsize len;
 	char **prefixes = NULL;
+
+#ifdef AT_COMMAND_DEBUG
+	DBG("Out: %s", cmd);
+#endif
 
 	if (prefix_list) {
 		int num_prefixes = 0;
@@ -592,7 +598,7 @@ static void have_line(struct at_chat *p, char *str)
 		return;
 
 	/* Check for echo, this should not happen, but lets be paranoid */
-	if (!strncmp(str, "AT", 2) == TRUE)
+	if (!strncmp(str, "AT", 2))
 		goto done;
 
 	cmd = g_queue_peek_head(p->command_queue);
@@ -736,6 +742,10 @@ static char *extract_line(struct at_chat *p, struct ring_buffer *rbuf)
 
 	line[line_length] = '\0';
 
+#ifdef AT_COMMAND_DEBUG
+	DBG("In: %s", line);
+#endif
+
 	return line;
 }
 
@@ -776,11 +786,17 @@ static void new_bytes(struct ring_buffer *rbuf, gpointer user_data)
 			break;
 
 		case G_AT_SYNTAX_RESULT_PROMPT:
+#ifdef AT_COMMAND_DEBUG
+			extract_line(p, rbuf);
+#endif
 			chat_wakeup_writer(p);
 			ring_buffer_drain(rbuf, p->read_so_far);
 			break;
 
 		default:
+#ifdef AT_COMMAND_DEBUG
+			extract_line(p, rbuf);
+#endif
 			ring_buffer_drain(rbuf, p->read_so_far);
 			break;
 		}
@@ -912,6 +928,10 @@ static gboolean can_write_data(gpointer data)
 					towrite
 #endif
 					);
+
+#ifdef AT_COMMAND_DEBUG
+	DBG("%s\r", cmd->cmd + cmd->bytes_written);
+#endif
 
 	if (bytes_written == 0)
 		return FALSE;
@@ -1081,6 +1101,9 @@ static guint at_chat_send_common(struct at_chat *chat, guint gid,
 		return 0;
 
 	c->id = chat->next_cmd_id++;
+#ifdef AT_COMMAND_DEBUG
+	DBG("c->id=%d", c->id);
+#endif
 
 	g_queue_push_tail(chat->command_queue, c);
 
