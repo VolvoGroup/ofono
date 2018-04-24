@@ -1141,6 +1141,34 @@ static DBusMessage *modem_set_property(DBusConnection *conn,
 	return __ofono_error_invalid_args(msg);
 }
 
+static DBusMessage *modem_shutdown(DBusConnection *conn,
+		DBusMessage *msg, void *data)
+{
+	struct ofono_modem *modem = data;
+
+	if (modem->pending)
+		return __ofono_error_busy(msg);
+
+	modem->pending = dbus_message_ref(msg);
+	modem->driver->modem_shutdown(modem);
+
+	return dbus_message_new_method_return(msg);
+}
+
+static DBusMessage *modem_reset(DBusConnection *conn,
+		DBusMessage *msg, void *data)
+{
+	struct ofono_modem *modem = data;
+
+	if (modem->pending)
+		return __ofono_error_busy(msg);
+
+	modem->pending = dbus_message_ref(msg);
+	modem->driver->modem_reset(modem);
+
+	return dbus_message_new_method_return(msg);
+}
+
 static const GDBusMethodTable modem_methods[] = {
 	{ GDBUS_METHOD("GetProperties",
 			NULL, GDBUS_ARGS({ "properties", "a{sv}" }),
@@ -1148,6 +1176,10 @@ static const GDBusMethodTable modem_methods[] = {
 	{ GDBUS_ASYNC_METHOD("SetProperty",
 			GDBUS_ARGS({ "property", "s" }, { "value", "v" }),
 			NULL, modem_set_property) },
+	{ GDBUS_ASYNC_METHOD("Shutdown", NULL, NULL,
+	    modem_shutdown) },
+	{ GDBUS_ASYNC_METHOD("Reset", NULL, NULL,
+	    modem_reset) },
 	{ }
 };
 

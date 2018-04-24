@@ -10,6 +10,15 @@ Methods		dict GetProperties()
 			Returns properties for the modem object. See
 			the properties section for available properties.
 
+		void Reset()
+
+			Resets the modem
+
+			Possible Errors: [service].Error.InProgress
+					 [service].Error.NotImplemented
+					 [service].Error.NotAvailable
+					 [service].Error.Failed
+
 		void SetProperty(string property, variant value)
 
 			Changes the value of the specified property. Only
@@ -22,6 +31,15 @@ Methods		dict GetProperties()
 					 [service].Error.InvalidArguments
 					 [service].Error.NotAvailable
 					 [service].Error.AccessDenied
+					 [service].Error.Failed
+
+		void Shutdown()
+
+			Turns off the modem in a controlled way.
+
+			Possible Errors: [service].Error.InProgress
+					 [service].Error.NotImplemented
+					 [service].Error.NotAvailable
 					 [service].Error.Failed
 
 Signals		PropertyChanged(string name, variant value)
