@@ -1146,6 +1146,9 @@ static DBusMessage *modem_shutdown(DBusConnection *conn,
 {
 	struct ofono_modem *modem = data;
 
+	if (modem->driver->modem_shutdown == NULL)
+		return __ofono_error_not_implemented(msg);
+
 	if (modem->pending)
 		return __ofono_error_busy(msg);
 
@@ -1160,11 +1163,28 @@ static DBusMessage *modem_reset(DBusConnection *conn,
 {
 	struct ofono_modem *modem = data;
 
+	if (modem->driver->modem_reset == NULL)
+		return __ofono_error_not_implemented(msg);
+
 	if (modem->pending)
 		return __ofono_error_busy(msg);
 
 	modem->pending = dbus_message_ref(msg);
+
 	modem->driver->modem_reset(modem);
+
+	return dbus_message_new_method_return(msg);
+}
+
+static DBusMessage *modem_sleep(DBusConnection *conn,
+		DBusMessage *msg, void *data)
+{
+	struct ofono_modem *modem = data;
+
+	if (modem->driver->modem_sleep == NULL)
+		return __ofono_error_not_implemented(msg);
+
+	modem->driver->modem_sleep(modem);
 
 	return dbus_message_new_method_return(msg);
 }
@@ -1180,6 +1200,8 @@ static const GDBusMethodTable modem_methods[] = {
 	    modem_shutdown) },
 	{ GDBUS_ASYNC_METHOD("Reset", NULL, NULL,
 	    modem_reset) },
+	{ GDBUS_ASYNC_METHOD("Sleep", NULL, NULL,
+	    modem_sleep) },
 	{ }
 };
 
