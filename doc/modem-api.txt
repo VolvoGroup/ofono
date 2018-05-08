@@ -24,6 +24,22 @@ Methods		dict GetProperties()
 					 [service].Error.AccessDenied
 					 [service].Error.Failed
 
+		void Reset()
+
+			Resets the modem
+
+			Possible Errors: [service].Error.InProgress
+					 [service].Error.NotImplemented
+					 [service].Error.Failed
+
+		void Shutdown()
+
+			Turns off the modem in a controlled way.
+
+			Possible Errors: [service].Error.InProgress
+					 [service].Error.NotImplemented
+					 [service].Error.Failed
+
 Signals		PropertyChanged(string name, variant value)
 
 			This signal indicates a changed value of the given
@@ -54,6 +70,10 @@ Properties	boolean Powered [readwrite]
 			modem. The Emergency is true if an emergency call or
 			related operation is currently active.
 
+		boolean Powersave [readwrite, optional, experimental]
+
+			Boolean indicating if the modem is in a low power mode.
+			
 		string Name [readonly, optional]
 
 			Friendly name of the modem device.  In the case of

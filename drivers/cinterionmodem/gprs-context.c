@@ -352,7 +352,7 @@ static void cint_gprs_activate_primary(struct ofono_gprs_context *gc,
 
   if (gcd->state == STATE_SET_APN) {
     if (gcd->modem == CINTERION_LTE) {
-      snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=1,%u,1", ctx->cid);
+      snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=1,%u", ctx->cid);
       if (g_at_chat_send(gcd->chat, buf, none_prefix, cinterion_swwan, gc, NULL)) {
         return;
       }
@@ -386,7 +386,7 @@ static void cint_gprs_deactivate_primary(struct ofono_gprs_context *gc,
   gcd->cb_data = data;
 
   if (gcd->modem == CINTERION_LTE) {
-    snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=0,%u,1", cid);
+    snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=0,%u", cid);
   }
   else {
     snprintf(buf, sizeof(buf) - 1, "AT+CGACT=0,%u", cid);
@@ -411,7 +411,7 @@ static void cint_gprs_detach_shutdown(struct ofono_gprs_context *gc,
   gcd = ofono_gprs_context_get_data(gc);
 
   if (gcd->modem == CINTERION_LTE) {
-    snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=0,%u,1", cid);
+    snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=0,%u", cid);
   }
   else {
     snprintf(buf, sizeof(buf) - 1, "AT+CGACT=0,%u", cid);

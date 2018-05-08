@@ -264,18 +264,20 @@ static int cinterion_probe(struct ofono_modem *modem)
 
 	g_at_chat_set_wakeup_command(data->app, "AT\r", 500, 5000);
 
-	/* No command echo, numeric error codes */
-	g_at_chat_send(data->app, "ATE0 +CMEE=1", none_prefix,
-		NULL, NULL, NULL);
+	/* No command echo */
+	g_at_chat_send(data->app, "ATE0", none_prefix, NULL, NULL, NULL);
+	/* No numeric error codes */
+	g_at_chat_send(data->app, "AT+CMEE=1", none_prefix, NULL, NULL, NULL);
 	/*
 	 * Needed to avoid Ctrl-Z to indicate that the modem has hung up
 	 */
-	g_at_chat_send(data->app, "AT&C0", none_prefix,
-		NULL, NULL, NULL);
+	g_at_chat_send(data->app, "AT&C0", none_prefix, NULL, NULL, NULL);
 
 	g_at_chat_register(data->app, "^EXIT",
 		cinterion_exit_urc_notify, FALSE, NULL, NULL);
 
+	g_at_chat_send(data->app, "AT^SCFG=\"MEopMode/PwrSave\",\"enabled\",52,50", none_prefix,
+					NULL, NULL, NULL);	/* Enable powersave mode */
 	/*
 	 * Listen to Over/Under temperature URCs
 	 * Piggy-back on the URC handler for the replies from the query command
@@ -379,6 +381,20 @@ static int cinterion_enable(struct ofono_modem *modem)
 	struct cinterion_data *data = ofono_modem_get_data(modem);
 
 	DBG("%p", modem);
+
+	/*
+	 * Start GNSS
+	 */
+	g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"0\"", none_prefix,
+					NULL, NULL, NULL);	/* turn off GNSS in order to configure */
+	g_at_chat_send(data->app, "AT^SGPSC=\"Power/Antenna\",\"auto\"", none_prefix,
+					NULL, NULL, NULL);
+	g_at_chat_send(data->app, "AT^SGPSC=\"Nmea/Glonass\",\"on\"", none_prefix,
+					NULL, NULL, NULL);
+	g_at_chat_send(data->app, "AT^SGPSC=\"Nmea/Output\",\"off\"", none_prefix,
+					NULL, NULL, NULL);
+	g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"1\"", none_prefix,
+					NULL, NULL, NULL);	/* turn on GNSS */
 
 	if (data->at_sbv_source) {
 		g_source_remove(data->at_sbv_source);
@@ -547,9 +563,59 @@ static void cinterion_shutdown(struct ofono_modem *modem)
 	DBG("");
 
 	/* Switch timeout callback to shutdown, don't reset if we crash now */
-
 	g_at_chat_send(data->app, "AT^SMSO", none_prefix, cinterion_smso_cb,
 					NULL, NULL);
+}
+
+static void cinterion_powersave_cb(gboolean ok, GAtResult *result,
+				gpointer user_data)
+{
+	struct ofono_modem *modem = user_data;
+	ofono_modem_set_powersave(modem, TRUE);
+
+	return;
+}
+
+static void cinterion_normal_cb(gboolean ok, GAtResult *result,
+				gpointer user_data)
+{
+	struct ofono_modem *modem = user_data;
+	ofono_modem_set_powersave(modem, FALSE);
+
+	return;
+}
+
+static void cinterion_powersave(struct ofono_modem *modem, ofono_bool_t enable)
+{
+	struct cinterion_data *data = ofono_modem_get_data(modem);
+
+	DBG("");
+
+	if (enable) {
+		g_at_chat_send(data->app, "AT+CREG=0", none_prefix,
+					NULL, NULL, NULL);	/* disable URC for network */
+		g_at_chat_send(data->app, "AT+CGREG=0", none_prefix,
+					NULL, NULL, NULL);	/* disable URC for GPRS */
+		g_at_chat_send(data->app, "AT+CNMI=2,1,0", none_prefix,
+					NULL, NULL, NULL);	/* Make sure URC for SMS is enabled */
+		g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"0\"", none_prefix,
+					NULL, NULL, NULL);	/* turn off GNSS */
+
+		g_at_chat_send(data->app, "AT", none_prefix,
+					cinterion_powersave_cb, modem, NULL);
+	}
+	else {
+		g_at_chat_send(data->app, "AT+CREG=2", none_prefix,
+					NULL, NULL, NULL);	/* enable URC for network */
+		g_at_chat_send(data->app, "AT+CGREG=2", none_prefix,
+					NULL, NULL, NULL);	/* enable URC for GPRS */
+		g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"1\"", none_prefix,
+					NULL, NULL, NULL);	/* turn on GNSS */
+
+		g_at_chat_send(data->app, "AT", none_prefix,
+					cinterion_normal_cb, modem, NULL);
+
+	}
 }
 
 static struct ofono_modem_driver cinterion_driver = {
@@ -564,6 +630,7 @@ static struct ofono_modem_driver cinterion_driver = {
 	.post_online	= cinterion_post_online,
 	.modem_reset	= cinterion_reset,
 	.modem_shutdown	= cinterion_shutdown,
+	.powersave	= cinterion_powersave,
 };
 
 static int cinterion_init(void)
