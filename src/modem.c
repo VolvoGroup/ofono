@@ -71,6 +71,7 @@ struct ofono_modem {
 	ofono_bool_t		powered_pending;
 	ofono_bool_t		get_online;
 	ofono_bool_t		lockdown;
+	ofono_bool_t		powersave;
 	char			*lock_owner;
 	guint			lock_watch;
 	guint			timeout;
@@ -802,6 +803,9 @@ void __ofono_modem_append_properties(struct ofono_modem *modem,
 	ofono_dbus_dict_append(dict, "Emergency", DBUS_TYPE_BOOLEAN,
 				&emergency);
 
+	ofono_dbus_dict_append(dict, "Powersave", DBUS_TYPE_BOOLEAN,
+				&modem->powersave);
+
 	info = __ofono_atom_find(OFONO_ATOM_TYPE_DEVINFO, modem);
 	if (info) {
 		if (info->manufacturer)
@@ -1055,6 +1059,28 @@ done:
 	return NULL;
 }
 
+static DBusMessage *set_property_powersave(struct ofono_modem *modem,
+					DBusMessage *msg,
+					DBusMessageIter *var)
+{
+	ofono_bool_t powersave;
+
+	if (dbus_message_iter_get_arg_type(var) != DBUS_TYPE_BOOLEAN)
+		return __ofono_error_invalid_args(msg);
+
+	dbus_message_iter_get_basic(var, &powersave);
+
+	if (modem->powersave == powersave)
+		return dbus_message_new_method_return(msg);
+
+	if (modem->driver->powersave == NULL)
+		return __ofono_error_not_implemented(msg);
+
+	modem->driver->powersave(modem, powersave);
+
+	return dbus_message_new_method_return(msg);
+}
+
 static DBusMessage *modem_set_property(DBusConnection *conn,
 					DBusMessage *msg, void *data)
 {
@@ -1078,6 +1104,9 @@ static DBusMessage *modem_set_property(DBusConnection *conn,
 		return __ofono_error_failed(msg);
 
 	dbus_message_iter_recurse(&iter, &var);
+
+	if (g_str_equal(name, "Powersave"))
+		return set_property_powersave(modem, msg, &var);
 
 	if (g_str_equal(name, "Online"))
 		return set_property_online(modem, msg, &var);
@@ -1176,19 +1205,6 @@ static DBusMessage *modem_reset(DBusConnection *conn,
 	return dbus_message_new_method_return(msg);
 }
 
-static DBusMessage *modem_sleep(DBusConnection *conn,
-		DBusMessage *msg, void *data)
-{
-	struct ofono_modem *modem = data;
-
-	if (modem->driver->modem_sleep == NULL)
-		return __ofono_error_not_implemented(msg);
-
-	modem->driver->modem_sleep(modem);
-
-	return dbus_message_new_method_return(msg);
-}
-
 static const GDBusMethodTable modem_methods[] = {
 	{ GDBUS_METHOD("GetProperties",
 			NULL, GDBUS_ARGS({ "properties", "a{sv}" }),
@@ -1200,8 +1216,6 @@ static const GDBusMethodTable modem_methods[] = {
 	    modem_shutdown) },
 	{ GDBUS_ASYNC_METHOD("Reset", NULL, NULL,
 	    modem_reset) },
-	{ GDBUS_ASYNC_METHOD("Sleep", NULL, NULL,
-	    modem_sleep) },
 	{ }
 };
 
@@ -1210,6 +1224,23 @@ static const GDBusSignalTable modem_signals[] = {
 			GDBUS_ARGS({ "name", "s" }, { "value", "v" })) },
 	{ }
 };
+
+void ofono_modem_set_powersave(struct ofono_modem *modem, ofono_bool_t powersave)
+{
+	DBusConnection *conn = ofono_dbus_get_connection();
+	dbus_bool_t dbus_powersave = powersave;
+
+	if (modem->powersave == powersave)
+		return;
+
+	modem->powersave = powersave;
+
+	ofono_dbus_signal_property_changed(conn, modem->path,
+					OFONO_MODEM_INTERFACE,
+					"Powersave", DBUS_TYPE_BOOLEAN,
+					&dbus_powersave);
+
+}
 
 void ofono_modem_set_powered(struct ofono_modem *modem, ofono_bool_t powered)
 {
@@ -2091,8 +2122,8 @@ static void modem_unregister(struct ofono_modem *modem)
 	DBG("%p", modem);
 
 	if (modem->powered == TRUE && modem->driver &&
-		modem->driver->modem_sleep)
-		modem->driver->modem_sleep(modem);
+		modem->driver->powersave)
+		modem->driver->powersave(modem, TRUE);
 
 	if (modem->atoms)
 		flush_atoms(modem, MODEM_STATE_POWER_OFF);
@@ -2249,8 +2280,8 @@ void __ofono_modem_shutdown(void)
 		if (modem->powered == FALSE && modem->powered_pending == FALSE)
 			continue;
 
-		if (modem->driver && modem->driver->modem_sleep)
-			modem->driver->modem_sleep(modem);
+		if (modem->driver && modem->driver->powersave)
+			modem->driver->powersave(modem, TRUE);
 
 		powered_modems = TRUE;
 	}

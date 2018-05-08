@@ -567,23 +567,59 @@ static void cinterion_shutdown(struct ofono_modem *modem)
 					NULL, NULL);
 }
 
-static void cinterion_sleep(struct ofono_modem *modem)
+static void cinterion_powersave_cb(gboolean ok, GAtResult *result,
+				gpointer user_data)
+{
+	struct ofono_modem *modem = user_data;
+	ofono_modem_set_powersave(modem, TRUE);
+
+	return;
+}
+
+static void cinterion_normal_cb(gboolean ok, GAtResult *result,
+				gpointer user_data)
+{
+	struct ofono_modem *modem = user_data;
+	ofono_modem_set_powersave(modem, FALSE);
+
+	return;
+}
+
+static void cinterion_powersave(struct ofono_modem *modem, ofono_bool_t enable)
 {
 	struct cinterion_data *data = ofono_modem_get_data(modem);
 
 	DBG("");
 
-	g_at_chat_send(data->app, "AT+CREG=0", none_prefix,
+	if (enable) {
+		g_at_chat_send(data->app, "AT+CREG=0", none_prefix,
 					NULL, NULL, NULL);	/* disable URC for network */
-	g_at_chat_send(data->app, "AT+CGREG=0", none_prefix,
+		g_at_chat_send(data->app, "AT+CGREG=0", none_prefix,
 					NULL, NULL, NULL);	/* disable URC for GPRS */
-	g_at_chat_send(data->app, "AT+CNMI=2,1,0", none_prefix,
+		g_at_chat_send(data->app, "AT+CNMI=2,1,0", none_prefix,
 					NULL, NULL, NULL);	/* Make sure URC for SMS is enabled */
-
-	g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"0\"", none_prefix,
+		g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"0\"", none_prefix,
 					NULL, NULL, NULL);	/* turn off GNSS */
-	g_at_chat_send(data->app, "AT^SGPSC=\"Power/Antenna\",\"off\"", none_prefix,
+		g_at_chat_send(data->app, "AT^SGPSC=\"Power/Antenna\",\"off\"", none_prefix,
 					NULL, NULL, NULL);	/* power off GNSS antenna */
+
+		g_at_chat_send(data->app, "AT", none_prefix,
+					cinterion_powersave_cb, modem, NULL);
+	}
+	else {
+		g_at_chat_send(data->app, "AT+CREG=2", none_prefix,
+					NULL, NULL, NULL);	/* enable URC for network */
+		g_at_chat_send(data->app, "AT+CGREG=2", none_prefix,
+					NULL, NULL, NULL);	/* enable URC for GPRS */
+		g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"1\"", none_prefix,
+					NULL, NULL, NULL);	/* turn on GNSS */
+		g_at_chat_send(data->app, "AT^SGPSC=\"Power/Antenna\",\"on\"", none_prefix,
+					NULL, NULL, NULL);	/* power on GNSS antenna */
+
+		g_at_chat_send(data->app, "AT", none_prefix,
+					cinterion_normal_cb, modem, NULL);
+
+	}
 }
 
 static struct ofono_modem_driver cinterion_driver = {
@@ -598,7 +634,7 @@ static struct ofono_modem_driver cinterion_driver = {
 	.post_online	= cinterion_post_online,
 	.modem_reset	= cinterion_reset,
 	.modem_shutdown	= cinterion_shutdown,
-	.modem_sleep	= cinterion_sleep,
+	.powersave	= cinterion_powersave,
 };
 
 static int cinterion_init(void)

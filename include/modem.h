@@ -75,8 +75,8 @@ struct ofono_modem_driver {
 	/* Populate the atoms available online */
 	void (*post_online)(struct ofono_modem *modem);
 
-	/* Prepare the modem for sleeping */
-	void (*modem_sleep)(struct ofono_modem *modem);
+	/* Enable/disable power-save mode */
+	void (*powersave)(struct ofono_modem *modem, ofono_bool_t enable);
 
 	/* Softly reset the modem using an AT command */
 	void (*modem_reset)(struct ofono_modem *modem);
@@ -110,6 +110,8 @@ ofono_bool_t ofono_modem_is_registered(struct ofono_modem *modem);
 void ofono_modem_remove(struct ofono_modem *modem);
 
 void ofono_modem_reset(struct ofono_modem *modem);
+
+void ofono_modem_set_powersave(struct ofono_modem *modem, ofono_bool_t powersave);
 
 void ofono_modem_set_powered(struct ofono_modem *modem, ofono_bool_t powered);
 ofono_bool_t ofono_modem_get_powered(struct ofono_modem *modem);
