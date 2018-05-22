@@ -340,11 +340,23 @@ static gboolean setup_cinterionahx3(struct modem_info* modem)
 static gboolean setup_cinterionLTE(struct modem_info* modem)
 {
 	const char *mdm = NULL, *app = NULL, *gps = NULL, *rsa = NULL,
-											*network1 = NULL, *network2 = NULL;
+			*network1 = NULL, *network2 = NULL;
+
+	gboolean devVersion = FALSE;
 
 	GSList *list;
 
 	DBG("%s", modem->syspath);
+
+	for (list = modem->devices; list; list = list->next) {
+		struct device_info *info = list->data;
+
+		/* TODO: Remove this when the modem reaches production state */
+		if (g_strcmp0(info->interface, "255/255/255") == 0) {
+			devVersion = TRUE;
+			DBG("Development version found");
+		}
+	}
 
 	for (list = modem->devices; list; list = list->next) {
 		struct device_info *info = list->data;
@@ -354,16 +366,20 @@ static gboolean setup_cinterionLTE(struct modem_info* modem)
 
 		if (g_strcmp0(info->interface, "2/2/1") == 0) {
 			if (g_strcmp0(info->number, "00") == 0)
-				mdm = info->devnode;
+				devVersion?(app = info->devnode):(mdm = info->devnode);
 			else if (g_strcmp0(info->number, "02") == 0)
-				app = info->devnode;
+				devVersion?(gps = info->devnode):(app = info->devnode);
 			else if (g_strcmp0(info->number, "04") == 0)
-				gps = info->devnode;
+				devVersion?(mdm = info->devnode):(gps = info->devnode);
 			else if (g_strcmp0(info->number, "06") == 0)
 				rsa = info->devnode;
 			/* Number 08 is unknown */
-		}
-		if (g_strcmp0(info->interface, "2/6/0") == 0) {
+		} else if (g_strcmp0(info->interface, "2/6/0") == 0) {
+			if (g_strcmp0(info->number, "0a") == 0)
+				network1 = info->devnode;
+			else if (g_strcmp0(info->number, "0c") == 0)
+				network2 = info->devnode;
+		} else if (g_strcmp0(info->interface, "255/255/255") == 0) {
 			if (g_strcmp0(info->number, "0a") == 0)
 				network1 = info->devnode;
 			else if (g_strcmp0(info->number, "0c") == 0)
@@ -1215,6 +1231,8 @@ static struct {
 	{ "cinterionahx3",	"cdc_ether",	"1e2d",	"0055"	},
 	{ "cinterionLTE",	"cdc_acm",	"1e2d",	"0061"	},
 	{ "cinterionLTE",	"cdc_ether",	"1e2d",	"0061"	},
+	{ "cinterionLTE",	"cdc_acm",	"1e2d",	"0063"	},
+	{ "cinterionLTE",	"cdc_wdm",	"1e2d",	"0063"	},
 	{ }
 };
 
