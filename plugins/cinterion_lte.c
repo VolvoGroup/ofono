@@ -383,15 +383,15 @@ static int cinterion_enable(struct ofono_modem *modem)
 	DBG("%p", modem);
 
 	/*
-	 * Start GNSS
+	 * Start GNSSl
 	 */
 	g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"0\"", none_prefix,
 					NULL, NULL, NULL);	/* turn off GNSS in order to configure */
-	g_at_chat_send(data->app, "AT^SGPSC=\"Power/Antenna\",\"auto\"", none_prefix,
+	g_at_chat_send(data->app, "AT^SGPSC=\"Power/Antenna\",\"on\"", none_prefix,
 					NULL, NULL, NULL);
 	g_at_chat_send(data->app, "AT^SGPSC=\"Nmea/Glonass\",\"on\"", none_prefix,
 					NULL, NULL, NULL);
-	g_at_chat_send(data->app, "AT^SGPSC=\"Nmea/Output\",\"off\"", none_prefix,
+	g_at_chat_send(data->app, "AT^SGPSC=\"Nmea/Output\",\"on\"", none_prefix,
 					NULL, NULL, NULL);
 	g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"1\"", none_prefix,
 					NULL, NULL, NULL);	/* turn on GNSS */
@@ -600,6 +600,8 @@ static void cinterion_powersave(struct ofono_modem *modem, ofono_bool_t enable)
 					NULL, NULL, NULL);	/* Make sure URC for SMS is enabled */
 		g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"0\"", none_prefix,
 					NULL, NULL, NULL);	/* turn off GNSS */
+		g_at_chat_send(data->app, "AT^SGPSC=\"Power/Antenna\",\"off\"", none_prefix,
+				    NULL, NULL, NULL);  /* Power off GNSS-antenna */
 
 		g_at_chat_send(data->app, "AT", none_prefix,
 					cinterion_powersave_cb, modem, NULL);
@@ -609,6 +611,8 @@ static void cinterion_powersave(struct ofono_modem *modem, ofono_bool_t enable)
 					NULL, NULL, NULL);	/* enable URC for network */
 		g_at_chat_send(data->app, "AT+CGREG=2", none_prefix,
 					NULL, NULL, NULL);	/* enable URC for GPRS */
+		g_at_chat_send(data->app, "AT^SGPSC=\"Power/Antenna\",\"on\"", none_prefix,
+				    NULL, NULL, NULL);  /* Power on GNSS-antenna */
 		g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"1\"", none_prefix,
 					NULL, NULL, NULL);	/* turn on GNSS */
 
