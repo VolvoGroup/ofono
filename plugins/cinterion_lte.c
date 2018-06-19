@@ -382,8 +382,16 @@ static int cinterion_enable(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
+	g_at_chat_send(data->app, "AT+CFUN=4", none_prefix,
+			cinterion_cfun_enable_cb, modem, NULL);
+
+	if (data->at_sbv_source) {
+		g_source_remove(data->at_sbv_source);
+		data->at_sbv_source = 0;
+	}
+
 	/*
-	 * Start GNSSl
+	 * Start GNSS
 	 */
 	g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"0\"", none_prefix,
 					NULL, NULL, NULL);	/* turn off GNSS in order to configure */
@@ -395,14 +403,6 @@ static int cinterion_enable(struct ofono_modem *modem)
 					NULL, NULL, NULL);
 	g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"1\"", none_prefix,
 					NULL, NULL, NULL);	/* turn on GNSS */
-
-	if (data->at_sbv_source) {
-		g_source_remove(data->at_sbv_source);
-		data->at_sbv_source = 0;
-	}
-
-	g_at_chat_send(data->app, "AT+CFUN=4", none_prefix,
-			cinterion_cfun_enable_cb, modem, NULL);
 
 	return -EINPROGRESS;
 }
