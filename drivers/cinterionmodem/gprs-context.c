@@ -29,6 +29,7 @@ enum state {
 
 static const char *cgcontrdp_prefix[] = { "+CGCONTRDP:", NULL };
 static const char *none_prefix[] = { NULL };
+static const int poll_time = 10;
 
 struct cint_gprs_context_data {
   GAtChat *chat;
@@ -37,6 +38,7 @@ struct cint_gprs_context_data {
   unsigned int active_context;
   char username[OFONO_GPRS_MAX_USERNAME_LENGTH + 1];
   char password[OFONO_GPRS_MAX_PASSWORD_LENGTH + 1];
+  unsigned int swwan_source;
   ofono_gprs_context_cb_t cb;
   void *cb_data;                                  /* Callback data */
 };
@@ -143,6 +145,74 @@ dynamic_ip:
   gcd->state = STATE_ACTIVE;
 
   CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
+}
+
+static void cint_gprs_detach(struct ofono_gprs_context *gc,
+          unsigned int cid)
+{
+  struct cint_gprs_context_data * gcd = ofono_gprs_context_get_data(gc);
+  char buf[32];
+
+  /* Turn off the polling for connection status */
+  if (gcd->swwan_source) {
+    g_source_remove(gcd->swwan_source);
+  }
+
+  if (gcd->modem == CINTERION_LTE) {
+    snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=0,%u", cid);
+  }
+  else {
+    snprintf(buf, sizeof(buf) - 1, "AT+CGACT=0,%u", cid);
+  }
+
+  g_at_chat_send(gcd->chat, buf, none_prefix, NULL, NULL, NULL);
+
+  gcd->active_context = 0;
+  gcd->state = STATE_IDLE;
+
+  /* Signal on Dbus that the context is deactivated */
+  ofono_gprs_context_deactivated(gc, cid);
+}
+
+static void cint_swwan_notify(GAtResult *result, gpointer user_data)
+{
+  struct ofono_gprs_context *gc = user_data;
+  int cid = 0;
+  int state = 0;
+  GAtResultIter iter;
+  static int time_connected = 0;
+
+  g_at_result_iter_init(&iter, result);
+  if (g_at_result_iter_next(&iter, "^SWWAN:")) {
+    g_at_result_iter_next_number(&iter, &cid);
+    g_at_result_iter_next_number(&iter, &state);
+    if (state == 1) {
+      struct cint_gprs_context_data * gcd = ofono_gprs_context_get_data(gc);
+      time_connected += poll_time;
+      gcd->state = STATE_ACTIVE;
+    }
+    else {
+      DBG("Connected time: %d s", time_connected);
+      cint_gprs_detach(gc, cid);
+      time_connected = 0;
+    }
+  }
+}
+
+static gboolean cint_swwan_query(gpointer user_data)
+{
+  struct ofono_gprs_context *gc = user_data;
+  struct cint_gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
+
+  if (gcd->state == STATE_ACTIVE) {
+    g_at_chat_send(gcd->chat, "AT^SWWAN?", none_prefix, NULL, NULL, NULL);
+    gcd->state = STATE_IDLE;
+  }
+  else {
+    cint_gprs_detach(gc, gcd->active_context);
+  }
+
+  return TRUE;
 }
 
 static void cinterion_swwan(gboolean ok, GAtResult *result, gpointer user_data)
@@ -273,6 +343,9 @@ static int cint_gprs_context_probe(struct ofono_gprs_context *gc,
   gcd->modem = vendor;
   ofono_gprs_context_set_data(gc, gcd);
 
+  g_at_chat_register(gcd->chat, "^SWWAN:", cint_swwan_notify,
+        FALSE, gc, NULL);
+
   /*if (getenv("OFONO_AT_DEBUG"))
     g_at_chat_set_debug(gcd->chat, cinterion_gprs_debug, "Modem: ");*/
 
@@ -354,6 +427,7 @@ static void cint_gprs_activate_primary(struct ofono_gprs_context *gc,
     if (gcd->modem == CINTERION_LTE) {
       snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=1,%u", ctx->cid);
       if (g_at_chat_send(gcd->chat, buf, none_prefix, cinterion_swwan, gc, NULL)) {
+        gcd->swwan_source = g_timeout_add_seconds(poll_time, cint_swwan_query, gc);
         return;
       }
     }
