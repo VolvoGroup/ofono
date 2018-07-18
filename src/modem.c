@@ -184,6 +184,16 @@ const char *ofono_modem_get_path(struct ofono_modem *modem)
 	return NULL;
 }
 
+struct ofono_sim *ofono_modem_get_sim(struct ofono_modem *modem)
+{
+	return __ofono_atom_find(OFONO_ATOM_TYPE_SIM, modem);
+}
+
+struct ofono_gprs *ofono_modem_get_gprs(struct ofono_modem *modem)
+{
+	return __ofono_atom_find(OFONO_ATOM_TYPE_GPRS, modem);
+}
+
 struct ofono_atom *__ofono_modem_add_atom(struct ofono_modem *modem,
 					enum ofono_atom_type type,
 					void (*destruct)(struct ofono_atom *),
@@ -787,6 +797,7 @@ void __ofono_modem_append_properties(struct ofono_modem *modem,
 	struct ofono_devinfo *info;
 	dbus_bool_t emergency = ofono_modem_get_emergency_mode(modem);
 	const char *strtype;
+	const char *system_path;
 
 	ofono_dbus_dict_append(dict, "Online", DBUS_TYPE_BOOLEAN,
 				&modem->online);
@@ -826,6 +837,11 @@ void __ofono_modem_append_properties(struct ofono_modem *modem,
 						DBUS_TYPE_STRING,
 						&info->svn);
 	}
+
+	system_path = ofono_modem_get_string(modem, "SystemPath");
+	if (system_path)
+		ofono_dbus_dict_append(dict, "SystemPath", DBUS_TYPE_STRING,
+					&system_path);
 
 	interfaces = g_new0(char *, g_slist_length(modem->interface_list) + 1);
 	for (i = 0, l = modem->interface_list; l; l = l->next, i++)
@@ -1688,6 +1704,11 @@ void *ofono_devinfo_get_data(struct ofono_devinfo *info)
 	return info->driver_data;
 }
 
+struct ofono_modem *ofono_devinfo_get_modem(struct ofono_devinfo *info)
+{
+	return __ofono_atom_get_modem(info->atom);
+}
+
 static void unregister_property(gpointer data)
 {
 	struct modem_property *property = data;
@@ -1866,7 +1887,7 @@ struct ofono_modem *ofono_modem_create(const char *name, const char *type)
 	else
 		snprintf(path, sizeof(path), "/%s", name);
 
-	if (__ofono_dbus_valid_object_path(path) == FALSE)
+	if (!dbus_validate_path(path, NULL))
 		return NULL;
 
 	modem = g_try_new0(struct ofono_modem, 1);

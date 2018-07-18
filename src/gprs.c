@@ -34,6 +34,7 @@
 #include <net/route.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <stdbool.h>
 
 #include <glib.h>
 #include <gdbus.h>
@@ -1635,6 +1636,20 @@ static gboolean have_active_contexts(struct ofono_gprs *gprs)
 	return FALSE;
 }
 
+static bool have_read_settings(struct ofono_gprs *gprs)
+{
+	GSList *l;
+
+	for (l = gprs->context_drivers; l; l = l->next) {
+		struct ofono_gprs_context *gc = l->data;
+
+		if (gc->driver && gc->driver->read_settings)
+			return true;
+	}
+
+	return false;
+}
+
 static void release_active_contexts(struct ofono_gprs *gprs)
 {
 	GSList *l;
@@ -1762,7 +1777,7 @@ static void gprs_netreg_update(struct ofono_gprs *gprs)
 	DBG("attach: %u, driver_attached: %u", attach, gprs->driver_attached);
 
 	if (ofono_netreg_get_technology(gprs->netreg) ==
-			ACCESS_TECHNOLOGY_EUTRAN)
+			ACCESS_TECHNOLOGY_EUTRAN && have_read_settings(gprs))
 		/*
 		 * For LTE we set attached status only on successful
 		 * context activation.
@@ -2939,6 +2954,27 @@ void ofono_gprs_context_set_ipv4_netmask(struct ofono_gprs_context *gc,
 
 	g_free(settings->ipv4->netmask);
 	settings->ipv4->netmask = g_strdup(netmask);
+}
+
+void ofono_gprs_context_set_ipv4_prefix_length(struct ofono_gprs_context *gc,
+						unsigned int length)
+{
+	struct context_settings *settings = gc->settings;
+	struct in_addr ipv4;
+	char buf[INET_ADDRSTRLEN];
+
+	if (settings->ipv4 == NULL)
+		return;
+
+	g_free(settings->ipv4->netmask);
+
+	memset(&ipv4, 0, sizeof(ipv4));
+
+	if (length)
+		ipv4.s_addr = htonl(~((1 << (32 - length)) - 1));
+
+	inet_ntop(AF_INET, &ipv4, buf, sizeof(buf));
+	settings->ipv4->netmask = g_strdup(buf);
 }
 
 void ofono_gprs_context_set_ipv4_gateway(struct ofono_gprs_context *gc,
