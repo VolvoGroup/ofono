@@ -21,32 +21,30 @@
 #include "modemmodel.h"
 
 enum state {
-  STATE_IDLE = 0,
-  STATE_SET_APN,
-  STATE_DEACTIVATING,
-  STATE_ACTIVE,
+	STATE_IDLE = 0,
+	STATE_SET_APN,
+	STATE_DEACTIVATING,
+	STATE_ACTIVE,
 };
 
 static const char *cgcontrdp_prefix[] = { "+CGCONTRDP:", NULL };
 static const char *none_prefix[] = { NULL };
 static const int poll_time = 10;
 
-struct cint_gprs_context_data {
-  GAtChat *chat;
+struct gprs_context_data {
+	GAtChat *chat;
+	struct ofono_gprs_primary_context cd;
   unsigned int modem;
-  enum state state;
-  unsigned int active_context;
-  char username[OFONO_GPRS_MAX_USERNAME_LENGTH + 1];
-  char password[OFONO_GPRS_MAX_PASSWORD_LENGTH + 1];
   unsigned int swwan_source;
-  ofono_gprs_context_cb_t cb;
-  void *cb_data;                                  /* Callback data */
+	enum state state;
+	ofono_gprs_context_cb_t cb;
+	void *cb_data;                                  /* Callback data */
 };
 
 static void cint_cgcontrdp_cb(gboolean ok, GAtResult *result, gpointer user_data)
 {
   struct ofono_gprs_context *gc = user_data;
-  struct cint_gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
+  struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
   struct ofono_modem* modem = ofono_gprs_context_get_modem(gc);
   GAtResultIter iter;
   const char *ip_with_netmask;
@@ -150,7 +148,7 @@ dynamic_ip:
 static void cint_gprs_detach(struct ofono_gprs_context *gc,
           unsigned int cid)
 {
-  struct cint_gprs_context_data * gcd = ofono_gprs_context_get_data(gc);
+  struct gprs_context_data * gcd = ofono_gprs_context_get_data(gc);
   char buf[32];
 
   /* Turn off the polling for connection status */
@@ -167,7 +165,7 @@ static void cint_gprs_detach(struct ofono_gprs_context *gc,
 
   g_at_chat_send(gcd->chat, buf, none_prefix, NULL, NULL, NULL);
 
-  gcd->active_context = 0;
+  gcd->cd.cid = 0;
   gcd->state = STATE_IDLE;
 
   /* Signal on Dbus that the context is deactivated */
@@ -182,12 +180,13 @@ static void cint_swwan_notify(GAtResult *result, gpointer user_data)
   GAtResultIter iter;
   static int time_connected = 0;
 
+  DBG("");
   g_at_result_iter_init(&iter, result);
   if (g_at_result_iter_next(&iter, "^SWWAN:")) {
     g_at_result_iter_next_number(&iter, &cid);
     g_at_result_iter_next_number(&iter, &state);
     if (state == 1) {
-      struct cint_gprs_context_data * gcd = ofono_gprs_context_get_data(gc);
+      struct gprs_context_data * gcd = ofono_gprs_context_get_data(gc);
       time_connected += poll_time;
       gcd->state = STATE_ACTIVE;
     }
@@ -202,14 +201,14 @@ static void cint_swwan_notify(GAtResult *result, gpointer user_data)
 static gboolean cint_swwan_query(gpointer user_data)
 {
   struct ofono_gprs_context *gc = user_data;
-  struct cint_gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
+  struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
 
   if (gcd->state == STATE_ACTIVE) {
     g_at_chat_send(gcd->chat, "AT^SWWAN?", none_prefix, NULL, NULL, NULL);
     gcd->state = STATE_IDLE;
   }
   else {
-    cint_gprs_detach(gc, gcd->active_context);
+    cint_gprs_detach(gc, gcd->cd.cid);
   }
 
   return TRUE;
@@ -218,7 +217,7 @@ static gboolean cint_swwan_query(gpointer user_data)
 static void cinterion_swwan(gboolean ok, GAtResult *result, gpointer user_data)
 {
   struct ofono_gprs_context *gc = user_data;
-  struct cint_gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
+  struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
   char buf[32];
 
   DBG("ok %d", ok);
@@ -228,7 +227,7 @@ static void cinterion_swwan(gboolean ok, GAtResult *result, gpointer user_data)
 
     ofono_info("Cannot establish data connection");
 
-    gcd->active_context = 0;
+    gcd->cd.cid = 0;
     gcd->state = STATE_IDLE;
 
     cint_util_decode_at_error(&error, g_at_result_final_response(result));
@@ -241,7 +240,7 @@ static void cinterion_swwan(gboolean ok, GAtResult *result, gpointer user_data)
    * The AT+CGCONTRDP query is not a required structure for operators to
    * fill out, but we need it for the operators that do.
    */
-  snprintf(buf, sizeof(buf) - 1, "AT+CGCONTRDP=%u", gcd->active_context);
+  snprintf(buf, sizeof(buf) - 1, "AT+CGCONTRDP=%u", gcd->cd.cid);
 
   g_at_chat_send(gcd->chat, buf, cgcontrdp_prefix,
             cint_cgcontrdp_cb, gc, NULL);
@@ -251,7 +250,7 @@ static void cinterion_swwan(gboolean ok, GAtResult *result, gpointer user_data)
 static void cinterion_cgact(gboolean ok, GAtResult *result, gpointer user_data)
 {
   struct ofono_gprs_context *gc = user_data;
-  struct cint_gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
+  struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
 
   DBG("ok %d", ok);
 
@@ -260,7 +259,7 @@ static void cinterion_cgact(gboolean ok, GAtResult *result, gpointer user_data)
 
     ofono_info("Cannot establish data connection");
 
-    gcd->active_context = 0;
+    gcd->cd.cid = 0;
     gcd->state = STATE_IDLE;
 
     cint_util_decode_at_error(&error, g_at_result_final_response(result));
@@ -278,34 +277,12 @@ static void cinterion_cgact(gboolean ok, GAtResult *result, gpointer user_data)
   CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
 }
 
-static void cint_cgdcont_cb(gboolean ok, GAtResult *result, gpointer user_data)
-{
-  struct ofono_gprs_context *gc = user_data;
-  struct cint_gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
-
-  DBG("ok %d", ok);
-
-  if (!ok) {
-    struct ofono_error error;
-
-    ofono_info("Error while configuring APN");
-
-    gcd->active_context = 0;
-    gcd->state = STATE_IDLE;
-
-    cint_util_decode_at_error(&error, g_at_result_final_response(result));
-    gcd->cb(&error, gcd->cb_data);
-    return;
-  }
-
-  CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
-}
 
 static void cinterion_context_deact_cb(gboolean ok, GAtResult *result,
           gpointer user_data)
 {
   struct ofono_gprs_context *gc = user_data;
-  struct cint_gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
+  struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
 
   DBG("ok %d", ok);
 
@@ -314,7 +291,7 @@ static void cinterion_context_deact_cb(gboolean ok, GAtResult *result,
 
     ofono_info("Error while deactivating data connection");
 
-    gcd->active_context = 0;
+    gcd->cd.cid = 0;
     gcd->state = STATE_IDLE;
 
     cint_util_decode_at_error(&error, g_at_result_final_response(result));
@@ -322,7 +299,7 @@ static void cinterion_context_deact_cb(gboolean ok, GAtResult *result,
     return;
   }
 
-  gcd->active_context = 0;
+  gcd->cd.cid = 0;
   gcd->state = STATE_IDLE;
 
   CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
@@ -331,11 +308,11 @@ static void cinterion_context_deact_cb(gboolean ok, GAtResult *result,
 static int cint_gprs_context_probe(struct ofono_gprs_context *gc,
           unsigned int vendor, void *data)
 {
-  struct cint_gprs_context_data *gcd = NULL;
+  struct gprs_context_data *gcd = NULL;
 
   DBG("");
 
-  gcd = g_try_new0(struct cint_gprs_context_data, 1);
+  gcd = g_try_new0(struct gprs_context_data, 1);
   if (gcd == NULL)
     return -ENOMEM;
 
@@ -346,16 +323,12 @@ static int cint_gprs_context_probe(struct ofono_gprs_context *gc,
   g_at_chat_register(gcd->chat, "^SWWAN:", cint_swwan_notify,
         FALSE, gc, NULL);
 
-  /*if (getenv("OFONO_AT_DEBUG"))
-    g_at_chat_set_debug(gcd->chat, cinterion_gprs_debug, "Modem: ");*/
-
-
   return 0;
 }
 
 static void cint_gprs_context_remove(struct ofono_gprs_context *gc)
 {
-  struct cint_gprs_context_data * gcd = NULL;
+  struct gprs_context_data * gcd = NULL;
 
   DBG("");
 
@@ -371,85 +344,135 @@ static void cint_gprs_context_remove(struct ofono_gprs_context *gc)
   g_free(gcd);
 }
 
-static void cint_gprs_set_apn(struct ofono_gprs_context *gc,
-        unsigned int cid, const char* apn,
-        ofono_gprs_context_cb_t cb, void *data)
-{
-  struct cint_gprs_context_data * gcd = NULL;
-  char buf[OFONO_GPRS_MAX_APN_LENGTH + 32];
 
-  gcd = ofono_gprs_context_get_data(gc);
+/* Activate context */
+static void activate_primary_3(gboolean success, GAtResult *result,
+		gpointer user_data) {
+	struct gprs_context_data *gcd;
+	gcd = ofono_gprs_context_get_data(user_data);
 
-  gcd->cb = cb;
-  gcd->cb_data = data;
+	DBG("cd.cid = %u", gcd->cd.cid);
 
-  if (apn) {
-    gcd->state = STATE_SET_APN;
-    snprintf(buf, sizeof(buf) - 1,
-        "AT+CGDCONT=%u,\"IP\",\"%s\"", cid, apn);
-  }
-  else {
-    gcd->state = STATE_IDLE;
-    snprintf(buf, sizeof(buf) - 1, "AT+CGDCONT=%u", cid);
-  }
+	switch (gcd->modem) {
+	case CINTERION_LTE: {
+		char buf[32];
+		snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=1,%u", gcd->cd.cid);
+		if (g_at_chat_send(gcd->chat, buf, none_prefix, cinterion_swwan, user_data, NULL)) {
+			gcd->swwan_source = g_timeout_add_seconds(poll_time, cint_swwan_query, user_data);
+			return;
+		}
+	}
+	break;
+	default: {
+		char buf[32];
+		snprintf(buf, sizeof(buf) - 1, "AT+CGACT=%u,1", gcd->cd.cid);
+		if (g_at_chat_send(gcd->chat, buf, none_prefix, cinterion_cgact, user_data, NULL)) {
+			return;
+		}
+	}
+	}
 
-  if (g_at_chat_send(gcd->chat, buf, none_prefix,
-        cint_cgdcont_cb, gc, NULL) > 0)
-    return;
+	/*
+	static void cint_cgdcont_cb(gboolean ok, GAtResult *result, gpointer user_data)
+	{
+	  struct ofono_gprs_context *gc = user_data;
+	  struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
 
-  CALLBACK_WITH_FAILURE(cb, data);
+	  DBG("ok %d", ok);
+
+	  if (!ok) {
+	    struct ofono_error error;
+
+	    ofono_info("Error while configuring APN");
+
+   return;
+	  }
+
+	  CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
+	}
+*/
+	CALLBACK_WITH_FAILURE(gcd->cb, gcd->cb_data);
 }
 
-static void cint_gprs_activate_primary(struct ofono_gprs_context *gc,
-        const struct ofono_gprs_primary_context *ctx,
-        ofono_gprs_context_cb_t cb, void *data)
-{
-  struct cint_gprs_context_data * gcd = NULL;
-  char buf[64];
+/* set credentials */
+static void activate_primary_2(gboolean success, GAtResult *result,
+		gpointer user_data) {
+	struct gprs_context_data *gcd;
+  struct ofono_error error;
 
-  DBG("cid %u", ctx->cid);
+  DBG("success = %d", success);
+	gcd = ofono_gprs_context_get_data(user_data);
+	if (success) { // ready to continue
+		char buf[OFONO_GPRS_MAX_USERNAME_LENGTH+OFONO_GPRS_MAX_PASSWORD_LENGTH+32];
 
-  gcd = ofono_gprs_context_get_data(gc);
+		snprintf(buf, sizeof(buf) - 1, "AT^SGAUTH=%u,1,\"%s\",\"%s\"", gcd->cd.cid, gcd->cd.password, gcd->cd.username);
+		if (g_at_chat_send(gcd->chat, buf, none_prefix, activate_primary_3, user_data, NULL) > 0) {
+			DBG("Sent SGAUTH, cd.cid=%d", gcd->cd.cid);
+			return;
+		}
+		DBG("Didn't send SGAUTH");
+		CALLBACK_WITH_FAILURE(gcd->cb, gcd->cb_data);
+		gcd->cd.cid = 0;
+	  gcd->state = STATE_IDLE;
+	  return;
+	}
 
-  gcd->active_context = ctx->cid;
-  gcd->cb = cb;
-  gcd->cb_data = data;
-  memcpy(gcd->username, ctx->username, sizeof(ctx->username));
-  memcpy(gcd->password, ctx->password, sizeof(ctx->password));
-
-  /* Add authentication step */
-  snprintf(buf, sizeof(buf) - 1, "AT^SGAUTH=%u,1,\"%s\",\"%s\"", ctx->cid, ctx->password, ctx->username);
-  if (g_at_chat_send(gcd->chat, buf, none_prefix, NULL, NULL, NULL) == 0) {
-    return;
-  }
-
-  if (gcd->state == STATE_SET_APN) {
-    if (gcd->modem == CINTERION_LTE) {
-      snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=1,%u", ctx->cid);
-      if (g_at_chat_send(gcd->chat, buf, none_prefix, cinterion_swwan, gc, NULL)) {
-        gcd->swwan_source = g_timeout_add_seconds(poll_time, cint_swwan_query, gc);
-        return;
-      }
-    }
-    else {
-      snprintf(buf, sizeof(buf) - 1, "AT+CGACT=%u,1", ctx->cid);
-      if (g_at_chat_send(gcd->chat, buf, none_prefix, cinterion_cgact, gc, NULL)) {
-        return;
-      }
-    }
-  }
-
-  gcd->active_context = 0;
+	gcd->cd.cid = 0;
   gcd->state = STATE_IDLE;
 
-  CALLBACK_WITH_FAILURE(cb, data);
+  ofono_info("Error while configuring APN");
+  cint_util_decode_at_error(&error, g_at_result_final_response(result));
+  gcd->cb(&error, gcd->cb_data);
+}
+
+/*
+ *  1. create context : AT+CGDCON <IP>
+ *  2. set credentials : AT^SGAUTH
+ *  3. activate : AT^SWWAN
+ */
+static void cint_gprs_activate_primary(struct ofono_gprs_context *gc,
+		const struct ofono_gprs_primary_context *ctx,
+		ofono_gprs_context_cb_t cb, void *data)
+{
+	struct gprs_context_data * gcd = NULL;
+
+	gcd = ofono_gprs_context_get_data(gc);
+
+	/* Require apn and credentials to continue */
+	if (ctx->apn      && strlen(ctx->apn) &&
+			ctx->username && strlen(ctx->username) &&
+			ctx->password && strlen(ctx->password)) {
+		char buf[OFONO_GPRS_MAX_APN_LENGTH + 32];
+
+		gcd->cb = cb;
+		gcd->cb_data = data;
+		gcd->cd = *ctx;
+		/* FIXME remove
+		gcd->cd.cid = ctx->cid;
+		memcpy(&gcd->cd, ctx, sizeof(gcd->cd));
+		memcpy(gcd->cd.apn,      ctx->apn,      sizeof(ctx->apn));
+		memcpy(gcd->cd.username, ctx->username, sizeof(ctx->username));
+		memcpy(gcd->cd.password, ctx->password, sizeof(ctx->password));
+		 */
+		DBG("cid %u: %s, %s, %s", gcd->cd.cid, gcd->cd.apn, gcd->cd.username, gcd->cd.password);
+
+		snprintf(buf, sizeof(buf) - 1,
+				"AT+CGDCONT=%u,\"IP\",\"%s\"", gcd->cd.cid, gcd->cd.apn);
+		if (g_at_chat_send(gcd->chat, buf, none_prefix,
+				activate_primary_2, gc, NULL) > 0)
+			return;
+	}
+
+	// FIXME prepare failure reason
+	DBG("Error exit");
+	CALLBACK_WITH_FAILURE(cb, data);
 }
 
 static void cint_gprs_deactivate_primary(struct ofono_gprs_context *gc,
           unsigned int cid,
           ofono_gprs_context_cb_t cb, void *data)
 {
-  struct cint_gprs_context_data * gcd = NULL;
+  struct gprs_context_data * gcd = NULL;
   char buf[32];
 
   DBG("cid %u", cid);
@@ -458,6 +481,15 @@ static void cint_gprs_deactivate_primary(struct ofono_gprs_context *gc,
   gcd->state = STATE_DEACTIVATING;
   gcd->cb = cb;
   gcd->cb_data = data;
+
+  /* FIXME
+   * A special form of the write command (AT+CGDCONT=<cid>) causes the values for context
+<cid> to become undefined
+   *  {
+      gcd->state = STATE_IDLE;
+      snprintf(buf, sizeof(buf) - 1, "AT+CGDCONT=%u", cid);
+    }
+   */
 
   if (gcd->modem == CINTERION_LTE) {
     snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=0,%u", cid);
@@ -477,7 +509,7 @@ static void cint_gprs_detach_shutdown(struct ofono_gprs_context *gc,
           unsigned int cid)
 
 {
-  struct cint_gprs_context_data * gcd = NULL;
+  struct gprs_context_data * gcd = NULL;
   char buf[32];
 
   DBG("cid %u", cid);
@@ -495,10 +527,9 @@ static void cint_gprs_detach_shutdown(struct ofono_gprs_context *gc,
 }
 
 static struct ofono_gprs_context_driver driver = {
-  .name      = "cinterionmodem",
+	.name      = "cinterionmodem",
   .probe      = cint_gprs_context_probe,
   .remove      = cint_gprs_context_remove,
-  .set_apn    = cint_gprs_set_apn,
   .activate_primary  = cint_gprs_activate_primary,
   .deactivate_primary  = cint_gprs_deactivate_primary,
   .detach_shutdown  = cint_gprs_detach_shutdown,

@@ -196,7 +196,6 @@ static void at_sim_read_info(struct ofono_sim *sim, int fileid,
 	case OFONO_VENDOR_HUAWEI:
 	case OFONO_VENDOR_SIERRA:
 	case OFONO_VENDOR_SPEEDUP:
-	case OFONO_VENDOR_CINTERION:
 	case OFONO_VENDOR_QUALCOMM_MSM:
 	case OFONO_VENDOR_SIMCOM:
 		/* Maximum possible length */
@@ -889,84 +888,6 @@ error:
 	CALLBACK_WITH_FAILURE(cb, NULL, cbd->data);
 }
 
-struct cinterion_spic_cb_user_data {
-	struct cb_data *cbd;
-	int facility;
-};
-
-static void cinterion_spic_free(gpointer data)
-{
-	struct cinterion_spic_cb_user_data* scbud = data;
-	if(scbud != NULL)
-	{
-		if(scbud->cbd != NULL)
-			g_free(scbud->cbd);
-		g_free(scbud);
-	}
-}
-
-static void cinterion_spic_cb(gboolean ok, GAtResult *result, gpointer user_data)
-{
-	struct cinterion_spic_cb_user_data *scbud = user_data;
-	struct cb_data *cbd = scbud->cbd;
-	ofono_sim_pin_retries_cb_t cb = cbd->cb;
-	const char *final = g_at_result_final_response(result);
-	GAtResultIter iter;
-	struct ofono_error error;
-	int retries[OFONO_SIM_PASSWORD_INVALID];
-	static int pin = -1;
-	static int puk = -1;
-	static int pin2 = -1;
-	static int puk2 = -1;
-	int retry_count;
-
-	decode_at_error(&error, final);
-
-	if (!ok) {
-		cb(&error, NULL, cbd->data);
-		return;
-	}
-
-	g_at_result_iter_init(&iter, result);
-
-	if (!g_at_result_iter_next(&iter, "^SPIC:"))
-		goto error;
-
-	if (!g_at_result_iter_next_number(&iter, &retry_count))
-		goto error;
-
-	switch(scbud->facility)
-	{
-		case OFONO_SIM_PASSWORD_SIM_PIN:
-			pin = retry_count;
-			break;
-		case OFONO_SIM_PASSWORD_SIM_PUK:
-			puk = retry_count;
-			break;
-		case OFONO_SIM_PASSWORD_SIM_PIN2:
-			pin2 = retry_count;
-			break;
-		case OFONO_SIM_PASSWORD_SIM_PUK2:
-			puk2 = retry_count;
-			break;
-		default:
-			break;
-	}
-
-	if (pin >= 0 && puk >= 0 && pin2 >= 0 && puk2 >= 0) {
-		retries[OFONO_SIM_PASSWORD_SIM_PIN] = pin;
-		retries[OFONO_SIM_PASSWORD_SIM_PUK] = puk;
-		retries[OFONO_SIM_PASSWORD_SIM_PIN2] = pin2;
-		retries[OFONO_SIM_PASSWORD_SIM_PUK2] = puk2;
-		cb(&error, retries, cbd->data);
-	}
-
-	return;
-
-error:
-	CALLBACK_WITH_FAILURE(cb, NULL, cbd->data);
-}
-
 #define AT_PCT_SET_RETRIES(retries, pin_type, value) \
 	retries[pin_type] = value; \
 	DBG("retry counter id=%d, val=%d", pin_type, value);
@@ -1145,68 +1066,44 @@ error:
 	CALLBACK_WITH_FAILURE(cb, NULL, cbd->data);
 }
 
-static void cinterion_pin_retries_query(struct ofono_sim *sim,
-					ofono_sim_pin_retries_cb_t cb,
-					void *data)
+static void cinterion_spic_cb(gboolean ok, GAtResult *result,
+							gpointer user_data)
 {
-	/*
-	 * Cinterion modems requires the query to be done per code instead of
-	 * displaying all the counters immediately.
-	 * This also requires sending a specialized struct as user_data so that we
-	 * can known which counter is for which code.
-	 *
-	 * TODO:
-	 * The solution presented is highly ineffective but appears required.
-	 * Attempted optimizations resulted in double free corruptions.
-	 */
-	struct sim_data *sd = ofono_sim_get_data(sim);
-	struct cb_data *cbd;
-	struct cinterion_spic_cb_user_data *scbud;
+	struct cb_data *cbd = user_data;
+	struct ofono_sim *sim = cbd->user;
+	ofono_sim_pin_retries_cb_t cb = cbd->cb;
+	const char *final = g_at_result_final_response(result);
+	GAtResultIter iter;
+	struct ofono_error error;
+	int retries[OFONO_SIM_PASSWORD_INVALID];
+	size_t i;
+	int pin_type = ofono_sim_get_password_type(sim);
 
-	DBG("");
+	decode_at_error(&error, final);
 
-	cbd = cb_data_new(cb, data);
-	cbd->user = sim;
-	scbud = g_try_new(struct cinterion_spic_cb_user_data, 1);
-	scbud->cbd = cbd;
-	scbud->facility = OFONO_SIM_PASSWORD_SIM_PIN;
-	if (!g_at_chat_send(sd->chat, "AT^SPIC=SC", cinterion_spic_prefix,
-				cinterion_spic_cb, scbud, cinterion_spic_free) > 0)
+	if (!ok) {
+		cb(&error, NULL, cbd->data);
+		return;
+	}
+
+	for (i = 0; i < OFONO_SIM_PASSWORD_INVALID; i++)
+		retries[i] = -1;
+
+	g_at_result_iter_init(&iter, result);
+
+	if (!g_at_result_iter_next(&iter, "^SPIC:"))
 		goto error;
 
-	cbd = cb_data_new(cb, data);
-	cbd->user = sim;
-	scbud = g_try_new(struct cinterion_spic_cb_user_data, 1);
-	scbud->cbd = cbd;
-	scbud->facility = OFONO_SIM_PASSWORD_SIM_PUK;
-	if (!g_at_chat_send(sd->chat, "AT^SPIC=SC,1", cinterion_spic_prefix,
-				cinterion_spic_cb, scbud, cinterion_spic_free) > 0)
+	if (!g_at_result_iter_next_number(&iter, &retries[pin_type]))
 		goto error;
 
-	cbd = cb_data_new(cb, data);
-	cbd->user = sim;
-	scbud = g_try_new(struct cinterion_spic_cb_user_data, 1);
-	scbud->cbd = cbd;
-	scbud->facility = OFONO_SIM_PASSWORD_SIM_PIN2;
-	if (!g_at_chat_send(sd->chat, "AT^SPIC=P2", cinterion_spic_prefix,
-				cinterion_spic_cb, scbud, cinterion_spic_free) > 0)
-		goto error;
-
-	cbd = cb_data_new(cb, data);
-	cbd->user = sim;
-	scbud = g_try_new(struct cinterion_spic_cb_user_data, 1);
-	scbud->cbd = cbd;
-	scbud->facility = OFONO_SIM_PASSWORD_SIM_PUK2;
-	if (!g_at_chat_send(sd->chat, "AT^SPIC=P2,1", cinterion_spic_prefix,
-				cinterion_spic_cb, scbud, cinterion_spic_free) > 0)
-		goto error;
+	DBG("Retry : %d, type : %d", retries[pin_type], pin_type);
+	cb(&error, retries, cbd->data);
 
 	return;
 
 error:
-	g_free(scbud);
-
-	CALLBACK_WITH_FAILURE(cb, NULL, data);
+	CALLBACK_WITH_FAILURE(cb, NULL, cbd->data);
 }
 
 static void at_pin_retries_query(struct ofono_sim *sim,
@@ -1282,7 +1179,6 @@ static void at_pin_retries_query(struct ofono_sim *sim,
 			return;
 		break;
 	case OFONO_VENDOR_CINTERION:
-		// FIXME return cinterion_pin_retries_query(sim, cb, data);
 		if (g_at_chat_send(sd->chat, "AT^SPIC", cinterion_spic_prefix,
 					cinterion_spic_cb, cbd, g_free) > 0)
 			return;

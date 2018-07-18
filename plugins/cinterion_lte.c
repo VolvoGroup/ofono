@@ -95,27 +95,6 @@ static void cinterion_debug(const char *str, void *user_data)
 	ofono_info("%s%s", prefix, str);
 }
 
-static guint cinterion_get_command_timeout(const char* cmd)
-{
-	/*
-	 * Some AT commands may take a longer time to complete during certain
-	 * conditions than what the recommendation says to allow.
-	 * These AT commands need to have longer timeouts to prevent the modem
-	 * from wrongly resetting.
-	 * The recommendation is to reset the modem after 5 seconds of no reply.
-	 */
-	if (strstr(cmd, "AT+CGDCONT") != 0)
-		return AT_CGDCONT_TIMEOUT;
-	if (strstr(cmd, "AT^SWWAN") != 0)
-		return AT_SWWAN_TIMEOUT;
-	if (strstr(cmd, "AT+COPS=?") != 0)
-		return AT_COPS_TIMEOUT;
-	if (strstr(cmd, "AT+CMGS") != 0)
-		return AT_CMGS_TIMEOUT;
-
-	return DEFAULT_TIMEOUT;
-}
-
 static GAtChat *open_device(const char *device)
 {
 	GAtSyntax *syntax;

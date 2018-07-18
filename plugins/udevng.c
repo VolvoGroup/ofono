@@ -315,41 +315,6 @@ done:
 }
 
 
-static gboolean setup_option(struct modem_info *modem)
-{
-	const char *aux = NULL, *mdm = NULL, *diag = NULL;
-	GSList *list;
-
-	DBG("%s", modem->syspath);
-
-	for (list = modem->devices; list; list = list->next) {
-		struct device_info *info = list->data;
-
-		DBG("%s %s %s %s", info->devnode, info->interface,
-						info->number, info->label);
-
-		if (g_strcmp0(info->interface, "255/255/255") == 0) {
-			if (g_strcmp0(info->number, "00") == 0)
-				mdm = info->devnode;
-			else if (g_strcmp0(info->number, "01") == 0)
-				diag = info->devnode;
-			else if (g_strcmp0(info->number, "02") == 0)
-				aux = info->devnode;
-		}
-
-	}
-
-	if (aux == NULL || mdm == NULL)
-		return FALSE;
-
-	DBG("aux=%s modem=%s diag=%s", aux, mdm, diag);
-
-	ofono_modem_set_string(modem->modem, "Aux", aux);
-	ofono_modem_set_string(modem->modem, "Modem", mdm);
-	ofono_modem_set_string(modem->modem, "Diag", diag);
-
-	return TRUE;
-}
 
 /* 
  * The port layout on this modem is customizable.
@@ -395,73 +360,6 @@ static gboolean setup_cinterionahx3(struct modem_info* modem)
 	ofono_modem_set_string(modem->modem, "GPS", gps);
 	ofono_modem_set_string(modem->modem, "Modem", mdm);
 	ofono_modem_set_string(modem->modem, "NetworkInterface", network);
-
-	return TRUE;
-}
-
-static gboolean setup_cinterionLTE(struct modem_info* modem)
-{
-	const char *mdm = NULL, *app = NULL, *gps = NULL, *rsa = NULL,
-			*network1 = NULL, *network2 = NULL;
-
-	gboolean devVersion = FALSE;
-
-	GSList *list;
-
-	DBG("%s", modem->syspath);
-
-	for (list = modem->devices; list; list = list->next) {
-		struct device_info *info = list->data;
-
-		/* TODO: Remove this when the modem reaches production state */
-		if (g_strcmp0(info->interface, "255/255/255") == 0) {
-			devVersion = TRUE;
-			DBG("Development version found");
-		}
-	}
-
-	for (list = modem->devices; list; list = list->next) {
-		struct device_info *info = list->data;
-
-		DBG("%s %s %s %s", info->devnode, info->interface,
-						info->number, info->label);
-
-		if (g_strcmp0(info->interface, "2/2/1") == 0) {
-			if (g_strcmp0(info->number, "00") == 0)
-				devVersion?(app = info->devnode):(mdm = info->devnode);
-			else if (g_strcmp0(info->number, "02") == 0)
-				devVersion?(gps = info->devnode):(app = info->devnode);
-			else if (g_strcmp0(info->number, "04") == 0)
-				devVersion?(mdm = info->devnode):(gps = info->devnode);
-			else if (g_strcmp0(info->number, "06") == 0)
-				rsa = info->devnode;
-			/* Number 08 is unknown */
-		} else if (g_strcmp0(info->interface, "2/6/0") == 0) {
-			if (g_strcmp0(info->number, "0a") == 0)
-				network1 = info->devnode;
-			else if (g_strcmp0(info->number, "0c") == 0)
-				network2 = info->devnode;
-		} else if (g_strcmp0(info->interface, "255/255/255") == 0) {
-			if (g_strcmp0(info->number, "0a") == 0)
-				network1 = info->devnode;
-			else if (g_strcmp0(info->number, "0c") == 0)
-				network2 = info->devnode;
-		}
-	}
-
-	DBG("modem=%s application=%s gps=%s rsa=%s network1=%s network2=%s",
-									mdm, app, gps, rsa, network1, network2);
-
-	if (mdm == NULL || app == FALSE ||
-						(network1 == FALSE && network2 == FALSE))
-		return FALSE;
-
-	ofono_modem_set_string(modem->modem, "Modem", mdm);
-	ofono_modem_set_string(modem->modem, "Application", app);
-	ofono_modem_set_string(modem->modem, "GPS", gps);
-	ofono_modem_set_string(modem->modem, "RSA", rsa);
-	ofono_modem_set_string(modem->modem, "NetworkInterface1", network1);
-	ofono_modem_set_string(modem->modem, "NetworkInterface2", network2);
 
 	return TRUE;
 }
@@ -1329,6 +1227,73 @@ static gboolean setup_gemalto(struct modem_info* modem)
 	return TRUE;
 }
 
+static gboolean setup_cinterionLTE(struct modem_info* modem)
+{
+	const char *mdm = NULL, *app = NULL, *gps = NULL, *rsa = NULL,
+			*network1 = NULL, *network2 = NULL;
+
+	gboolean devVersion = FALSE;
+
+	GSList *list;
+
+	DBG("%s", modem->syspath);
+
+	for (list = modem->devices; list; list = list->next) {
+		struct device_info *info = list->data;
+
+		/* TODO: Remove this when the modem reaches production state */
+		if (g_strcmp0(info->interface, "255/255/255") == 0) {
+			devVersion = TRUE;
+			DBG("Development version found");
+		}
+	}
+
+	for (list = modem->devices; list; list = list->next) {
+		struct device_info *info = list->data;
+
+		DBG("%s %s %s %s", info->devnode, info->interface,
+						info->number, info->label);
+
+		if (g_strcmp0(info->interface, "2/2/1") == 0) {
+			if (g_strcmp0(info->number, "00") == 0)
+				devVersion?(app = info->devnode):(mdm = info->devnode);
+			else if (g_strcmp0(info->number, "02") == 0)
+				devVersion?(gps = info->devnode):(app = info->devnode);
+			else if (g_strcmp0(info->number, "04") == 0)
+				devVersion?(mdm = info->devnode):(gps = info->devnode);
+			else if (g_strcmp0(info->number, "06") == 0)
+				rsa = info->devnode;
+			/* Number 08 is unknown */
+		} else if (g_strcmp0(info->interface, "2/6/0") == 0) {
+			if (g_strcmp0(info->number, "0a") == 0)
+				network1 = info->devnode;
+			else if (g_strcmp0(info->number, "0c") == 0)
+				network2 = info->devnode;
+		} else if (g_strcmp0(info->interface, "255/255/255") == 0) {
+			if (g_strcmp0(info->number, "0a") == 0)
+				network1 = info->devnode;
+			else if (g_strcmp0(info->number, "0c") == 0)
+				network2 = info->devnode;
+		}
+	}
+
+	DBG("modem=%s application=%s gps=%s rsa=%s network1=%s network2=%s",
+									mdm, app, gps, rsa, network1, network2);
+
+	if (mdm == NULL || app == FALSE ||
+						(network1 == FALSE && network2 == FALSE))
+		return FALSE;
+
+	ofono_modem_set_string(modem->modem, "Modem", mdm);
+	ofono_modem_set_string(modem->modem, "Application", app);
+	ofono_modem_set_string(modem->modem, "GPS", gps);
+	ofono_modem_set_string(modem->modem, "RSA", rsa);
+	ofono_modem_set_string(modem->modem, "NetworkInterface1", network1);
+	ofono_modem_set_string(modem->modem, "NetworkInterface2", network2);
+
+	return TRUE;
+}
+
 static gboolean setup_xmm7xxx(struct modem_info *modem)
 {
 	const char *mdm = NULL, *net = NULL;
@@ -1440,7 +1405,6 @@ static struct {
 	{ "quectel",	setup_quectel	},
 	{ "cinterionahx3",	setup_cinterionahx3	},
 	{ "cinterionLTE",	setup_cinterionLTE	},
-	// FIXME { "cinterionals3",	setup_cinterionals3	},
 	{ "quectelqmi",	setup_quectelqmi},
 	{ "ublox",	setup_ublox	},
 	{ "gemalto",	setup_gemalto	},
@@ -1608,7 +1572,7 @@ static void add_serial_device(struct udev_device *dev)
 	const char *subsystem;
 	struct udev_device* mdev;
 	const char* driver;
-	DBG("");
+
 	mdev = get_serial_modem_device(dev);
 	if (!mdev) {
 		DBG("Device is missing required OFONO_DRIVER property");
@@ -1815,10 +1779,9 @@ static struct {
 	{ "cinterionahx3",	"option",	"1e2d",	"0055"	},
 	{ "cinterionahx3",	"cdc_ether",	"1e2d",	"0055"	},
 	{ "cinterionLTE",	"cdc_acm",	"1e2d",	"0061"	},
+	{ "cinterionLTE",	"cdc_ether",	"1e2d",	"0061"	},
 	{ "cinterionLTE",	"cdc_acm",	"1e2d",	"0063"	},
 	{ "cinterionLTE",	"cdc_wdm",	"1e2d",	"0063"	},
-  { "cinterionLTE",	 "cdc_ether",	"1e2d",	"0061"	},
-	{ "cinterionals3", "cdc_ether",	"1e2d",	"0061"	},
 	{ "quectelqmi",	"qmi_wwan",	"2c7c", "0121"	},
 	{ "quectelqmi",	"qcserial",	"2c7c", "0121"	},
 	{ "quectelqmi",	"qmi_wwan",	"2c7c", "0125"	},
@@ -1829,8 +1792,8 @@ static struct {
 	{ "gemalto",	"option",	"1e2d",	"0053"	},
 	{ "gemalto",	"cdc_wdm",	"1e2d",	"0053"	},
 	{ "gemalto",	"qmi_wwan",	"1e2d",	"0053"	},
-	{ "gemalto",	"cdc_acm",	"1e2d",	"0061"	},
-	{ "gemalto",	"cdc_ether",	"1e2d",	"0061"	},
+	// FIXME cinerionLTE { "gemalto",	"cdc_acm",	"1e2d",	"0061"	},
+	// FIXME cinerionLTE { "gemalto",	"cdc_ether",	"1e2d",	"0061"	},
 	{ "telit",	"cdc_ncm",	"1bc7", "0036"	},
 	{ "telit",	"cdc_acm",	"1bc7", "0036"	},
 	{ "xmm7xxx",	"cdc_acm",	"8087"		},
@@ -1844,6 +1807,7 @@ static void check_usb_device(struct udev_device *device)
 	const char *syspath, *devname, *driver;
 	const char *vendor = NULL, *model = NULL;
 
+	DBG("");
 	usb_device = udev_device_get_parent_with_subsystem_devtype(device,
 							"usb", "usb_device");
 	if (usb_device == NULL)
@@ -1863,6 +1827,7 @@ static void check_usb_device(struct udev_device *device)
 
 	vendor = udev_device_get_property_value(usb_device, "ID_VENDOR_ID");	DBG("vendor = %s", vendor);
 	model = udev_device_get_property_value(usb_device, "ID_MODEL_ID");	DBG("model = %s", model);
+
 	driver = udev_device_get_property_value(usb_device, "OFONO_DRIVER");	DBG("driver = %s", driver?driver:"NULL");
 	if (!driver) {
 		struct udev_device *usb_interface =
@@ -1898,22 +1863,28 @@ static void check_usb_device(struct udev_device *device)
 		DBG("%s [%s:%s]", drv, vendor, model);
 
 		for (i = 0; vendor_list[i].driver; i++) {
+			DBG(">> %s [%s:%s] %s", vendor_list[i].vid ? vendor_list[i].drv : "---",
+					vendor_list[i].vid ? vendor_list[i].vid : "----",
+							vendor_list[i].pid ? vendor_list[i].pid : "----",
+									vendor_list[i].driver ? vendor_list[i].driver : "");
+
 			if (g_str_equal(vendor_list[i].drv, drv) == FALSE)
 				continue;
 
+			DBG("Match drv '%s'", drv ? drv : "");
 			if (vendor_list[i].vid) {
 				if (!g_str_equal(vendor_list[i].vid, vendor))
 					continue;
 			}
-
+DBG("Match vid '%s'", vendor ? vendor : "");
 			if (vendor_list[i].pid) {
 				if (!g_str_equal(vendor_list[i].pid, model))
 					continue;
 			}
-
+DBG("Match pid '%s'", model ? model : "");
 			driver = vendor_list[i].driver;
 		}
-
+DBG("Match driver '%s'", driver ? driver : "");
 		if (driver == NULL)
 			return;
 	}
@@ -1931,7 +1902,7 @@ static void check_device(struct udev_device *device)
 		if (bus == NULL)
 			return;
 	}
-	DBG("check_device(): bus=%s", bus);
+
 	if ((g_str_equal(bus, "usb") == TRUE) ||
 			(g_str_equal(bus, "usbmisc") == TRUE))
 		check_usb_device(device);
@@ -1961,6 +1932,7 @@ static gboolean create_modem(gpointer key, gpointer value, gpointer user_data)
 		return TRUE;
 
 	for (i = 0; driver_list[i].name; i++) {
+		DBG("Checking %s @ %p", driver_list[i].name, driver_list[i].setup);
 		if (g_str_equal(driver_list[i].name, modem->driver) == FALSE)
 			continue;
 

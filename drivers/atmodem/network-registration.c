@@ -51,7 +51,6 @@ static const char *cmer_prefix[] = { "+CMER:", NULL };
 static const char *smoni_prefix[] = { "^SMONI:", NULL };
 static const char *zpas_prefix[] = { "+ZPAS:", NULL };
 static const char *option_tech_prefix[] = { "_OCTI:", "_OUWCTI:", NULL };
-static const char *cinterion_sind_prefix[] = { "^SIND:", NULL };
 
 struct netreg_data {
 	GAtChat *chat;
@@ -882,8 +881,6 @@ static void cinterion_ciev_notify(GAtResult *result, gpointer user_data)
 	struct ofono_netreg *netreg = user_data;
 	struct netreg_data *nd = ofono_netreg_get_data(netreg);
 	const char *signal_identifier = "rssi";
-	const char *release_cause_identifier = "ceer";
-	const char *str;
 	const char *ind_str;
 	int strength;
 	GAtResultIter iter;
@@ -892,30 +889,6 @@ static void cinterion_ciev_notify(GAtResult *result, gpointer user_data)
 
 	if (!g_at_result_iter_next(&iter, "+CIEV:"))
 		return;
-
-	if (!g_at_result_iter_next_unquoted_string(&iter, &str))
-		return;
-
-	if (g_str_equal(signal_identifier, str))
-	{
-		if (!g_at_result_iter_next_number(&iter, &strength))
-			return;
-
-		DBG("rssi %d", strength);
-
-		if (strength == nd->signal_invalid)
-			strength = -1;
-		else
-			strength = (strength * 100) / (nd->signal_max - nd->signal_min);
-
-		ofono_netreg_strength_notify(netreg, strength);
-
-		return;
-	}
-	else if (g_str_equal(release_cause_identifier, str))
-	{
-		/* TODO: Handle "ceer" type strings, and ship them to the correct handler */
-	}
 
 	if (!g_at_result_iter_next_unquoted_string(&iter, &ind_str))
 		return;
@@ -1888,90 +1861,6 @@ error:
 	ofono_netreg_remove(netreg);
 }
 
-static void cinterion_sind_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
-{
-	struct ofono_netreg *netreg = user_data;
-	struct netreg_data *nd = ofono_netreg_get_data(netreg);
-
-	if (!ok)
-		return;
-
-	g_at_chat_register(nd->chat, "+CIEV:",
-				cinterion_ciev_notify, FALSE, netreg, NULL);
-
-	g_at_chat_register(nd->chat, "+CREG:",
-				creg_notify, FALSE, netreg, NULL);
-
-	ofono_netreg_register(netreg);
-}
-
-static void cinterion_sind_cb(gboolean ok, GAtResult *result, gpointer user_data)
-{
-	struct ofono_netreg *netreg = user_data;
-	struct netreg_data *nd = ofono_netreg_get_data(netreg);
-	GAtResultIter iter;
-	const char *str;
-	char *signal_identifier = "rssi";
-	int min = 0;
-	int max = 0;
-	int tmp_min, tmp_max, invalid;
-
-	if (!ok)
-		goto error;
-
-	g_at_result_iter_init(&iter, result);
-	if (!g_at_result_iter_next(&iter, "^SIND:"))
-		goto error;
-
-	g_at_result_iter_open_list(&iter);
-
-	while (g_at_result_iter_open_list(&iter)) {
-		/* Reset invalid default value for every token */
-		invalid = 99;
-
-		if (!g_at_result_iter_next_unquoted_string(&iter, &str))
-			goto error;
-
-		if (!g_at_result_iter_open_list(&iter))
-			goto error;
-
-		while (g_at_result_iter_next_range(&iter, &tmp_min, &tmp_max)) {
-			if (tmp_min != tmp_max) {
-				min = tmp_min;
-				max = tmp_max;
-			} else
-				invalid = tmp_min;
-		}
-
-		if (!g_at_result_iter_close_list(&iter))
-			goto error;
-
-		if (!g_at_result_iter_close_list(&iter))
-			goto error;
-
-		if (g_str_equal(signal_identifier, str) == TRUE) {
-			nd->signal_index = 0;
-			nd->signal_min = min;
-			nd->signal_max = max;
-			nd->signal_invalid = invalid;
-		}
-	}
-
-	g_at_result_iter_close_list(&iter);
-
-	g_at_chat_send(nd->chat, "AT^SIND=\"rssi\",1", cinterion_sind_prefix,
-				cinterion_sind_set_cb, netreg, NULL);
-
-	return;
-
-error:
-	ofono_error("This driver is not setup with Signal Strength reporting"
-			" via SIND indications, please write proper netreg"
-			" handling for this device");
-
-	ofono_netreg_remove(netreg);
-}
-
 static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct ofono_netreg *netreg = user_data;
@@ -2155,8 +2044,8 @@ static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		nd->signal_invalid = 99;
 
 		/* Register for specific signal strength reports */
-		g_at_chat_send(nd->chat, "AT^SIND=?", cinterion_sind_prefix,
-				cinterion_sind_cb, netreg, NULL);
+		g_at_chat_send(nd->chat, "AT^SIND=\"rssi\",1", none_prefix,
+				NULL, NULL, NULL);
 		g_at_chat_register(nd->chat, "+CIEV:",
 				cinterion_ciev_notify, FALSE, netreg, NULL);
 		break;

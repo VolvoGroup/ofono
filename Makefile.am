@@ -84,7 +84,7 @@ gatchat_sources = gatchat/gatchat.h gatchat/gatchat.c \
 				gatchat/ppp.h gatchat/ppp_cp.h \
 				gatchat/ppp_cp.c gatchat/ppp_lcp.c \
 				gatchat/ppp_auth.c gatchat/ppp_net.c \
-				gatchat/ppp_ipcp.c gatchat/ppp_ipv6cp.c src/log.c
+				gatchat/ppp_ipcp.c gatchat/ppp_ipv6cp.c
 
 gisi_sources = gisi/client.c gisi/client.h gisi/common.h \
 				gisi/iter.c gisi/iter.h \
@@ -660,7 +660,7 @@ endif
 sbin_PROGRAMS = src/ofonod
 
 src_ofonod_SOURCES = $(builtin_sources) $(gatchat_sources) src/ofono.ver \
-			src/main.c src/ofono.h src/plugin.c \
+			src/main.c src/ofono.h src/log.c src/plugin.c \
 			src/modem.c src/common.h src/common.c \
 			src/manager.c src/dbus.c src/util.h src/util.c \
 			src/network.c src/voicecall.c src/ussd.c src/sms.c \
@@ -875,8 +875,12 @@ endif
 endif
 
 
+if TEST
 noinst_PROGRAMS = $(unit_tests) \
 			unit/test-sms-root unit/test-mux unit/test-caif
+else
+noinst_PROGRAMS = 
+endif
 
 unit_test_common_SOURCES = unit/test-common.c src/common.c src/util.c
 unit_test_common_LDADD = @GLIB_LIBS@
@@ -916,13 +920,13 @@ unit_test_sms_root_LDADD = @GLIB_LIBS@
 unit_objects += $(unit_test_sms_root_OBJECTS)
 
 unit_test_mux_SOURCES = unit/test-mux.c $(gatchat_sources)
-unit_test_mux_LDADD = @GLIB_LIBS@ -ldl
+unit_test_mux_LDADD = @GLIB_LIBS@
 unit_objects += $(unit_test_mux_OBJECTS)
 
 unit_test_caif_SOURCES = unit/test-caif.c $(gatchat_sources) \
 					drivers/stemodem/caif_socket.h \
 					drivers/stemodem/if_caif.h
-unit_test_caif_LDADD = @GLIB_LIBS@ -ldl
+unit_test_caif_LDADD = @GLIB_LIBS@
 unit_objects += $(unit_test_caif_OBJECTS)
 
 test_rilmodem_sources = $(gril_sources) src/log.c src/common.c src/util.c \
@@ -999,7 +1003,7 @@ noinst_PROGRAMS += tools/stktest
 
 tools_stktest_SOURCES = $(gatchat_sources) tools/stktest.c \
 				unit/stk-test-data.h
-tools_stktest_LDADD = gdbus/libgdbus-internal.la @GLIB_LIBS@ @DBUS_LIBS@ -ldl
+tools_stktest_LDADD = gdbus/libgdbus-internal.la @GLIB_LIBS@ @DBUS_LIBS@
 endif
 endif
 
@@ -1008,7 +1012,7 @@ if DUNDEE
 sbin_PROGRAMS += dundee/dundee
 
 dundee_common_sources = $(gatchat_sources) \
-			src/dbus.c dundee/dundee.h dundee/main.c \
+			src/log.c src/dbus.c dundee/dundee.h dundee/main.c \
 			dundee/dbus.c dundee/manager.c dundee/device.c
 
 dundee_dundee_LDADD = $(builtin_libadd) gdbus/libgdbus-internal.la \
@@ -1032,16 +1036,18 @@ endif
 endif
 endif
 
+if TEST
 noinst_PROGRAMS += gatchat/gsmdial gatchat/test-server gatchat/test-qcdm
+endif
 
 gatchat_gsmdial_SOURCES = gatchat/gsmdial.c $(gatchat_sources)
-gatchat_gsmdial_LDADD = @GLIB_LIBS@ -ldl
+gatchat_gsmdial_LDADD = @GLIB_LIBS@
 
 gatchat_test_server_SOURCES = gatchat/test-server.c $(gatchat_sources)
-gatchat_test_server_LDADD = @GLIB_LIBS@ -lutil -ldl
+gatchat_test_server_LDADD = @GLIB_LIBS@ -lutil
 
 gatchat_test_qcdm_SOURCES = gatchat/test-qcdm.c $(gatchat_sources)
-gatchat_test_qcdm_LDADD = @GLIB_LIBS@ -ldl
+gatchat_test_qcdm_LDADD = @GLIB_LIBS@
 
 
 DISTCHECK_CONFIGURE_FLAGS = --disable-datafiles \

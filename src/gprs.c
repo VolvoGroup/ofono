@@ -967,6 +967,7 @@ static void gprs_set_attached_property(struct ofono_gprs *gprs,
 	DBusConnection *conn = ofono_dbus_get_connection();
 	dbus_bool_t value = attached;
 
+	DBG("%d", attached);
 	if (gprs->attached == attached)
 		return;
 
@@ -1023,46 +1024,10 @@ static void pri_read_settings_callback(const struct ofono_error *error,
 	}
 }
 
-static void pri_set_apn_callback(const struct ofono_error *error, void *data)
-{
-	struct pri_context *ctx = data;
-	DBusConnection *conn = ofono_dbus_get_connection();
-	GKeyFile *settings = ctx->gprs->settings;
-	const char* apn;
-
-	if (error->type != OFONO_ERROR_TYPE_NO_ERROR) {
-		DBG("Setting APN failed with error: %s",
-				telephony_error_to_str(error));
-		__ofono_dbus_pending_reply(&ctx->pending,
-					__ofono_error_failed(ctx->pending));
-		strcpy(ctx->context.apn, "");
-		return;
-	}
-
-	if (settings) {
-		g_key_file_set_string(settings, ctx->key,
-					"AccessPointName", ctx->context.apn);
-		storage_sync(ctx->gprs->imsi, SETTINGS_STORE, settings);
-	}
-
-	__ofono_dbus_pending_reply(&ctx->pending,
-				dbus_message_new_method_return(ctx->pending));
-
-	apn = ctx->context.apn;
-	ofono_dbus_signal_property_changed(conn, ctx->path,
-					OFONO_CONNECTION_CONTEXT_INTERFACE,
-					"AccessPointName",
-					DBUS_TYPE_STRING, &apn);
-}
-
 static DBusMessage *pri_set_apn(struct pri_context *ctx, DBusConnection *conn,
 				DBusMessage *msg, const char *apn)
 {
-	struct ofono_gprs_context *gc;
 	GKeyFile *settings = ctx->gprs->settings;
-
-	if (strlen(apn) > OFONO_GPRS_MAX_APN_LENGTH)
-		return __ofono_error_invalid_format(msg);
 
 	if (g_str_equal(apn, ctx->context.apn))
 		return dbus_message_new_method_return(msg);

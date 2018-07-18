@@ -319,44 +319,6 @@ static void at_cnma_cb(gboolean ok, GAtResult *result, gpointer user_data)
 				"Further SMS reception is not guaranteed");
 }
 
-/* Cinterion modems omit the comma before the PDU size field */
-static gboolean cint_parse_cmt(GAtResult *result, const char **pdu, int *pdulen)
-{
-	GAtResultIter iter;
-
-	g_at_result_iter_init(&iter, result);
-
-	if (!g_at_result_iter_next(&iter, "+CMT:"))
-		return FALSE;
-
-	if (!g_at_result_iter_next_number(&iter, pdulen))
-		return FALSE;
-
-	*pdu = g_at_result_pdu(result);
-
-	return TRUE;
-}
-
-static gboolean at_parse_cmt(GAtResult *result, const char **pdu, int *pdulen)
-{
-	GAtResultIter iter;
-
-	g_at_result_iter_init(&iter, result);
-
-	if (!g_at_result_iter_next(&iter, "+CMT:"))
-		return FALSE;
-
-	if (!g_at_result_iter_skip_next(&iter))
-		return FALSE;
-
-	if (!g_at_result_iter_next_number(&iter, pdulen))
-		return FALSE;
-
-	*pdu = g_at_result_pdu(result);
-
-	return TRUE;
-}
-
 static inline void at_ack_delivery(struct ofono_sms *sms)
 {
 	struct sms_data *data = ofono_sms_get_data(sms);
@@ -365,7 +327,6 @@ static inline void at_ack_delivery(struct ofono_sms *sms)
 	DBG("");
 
 	/* We must acknowledge the PDU using CNMA */
-	/* Cinterion modems do not take any parameters with the CNMA command.*/
 	if (data->cnma_ack_pdu) {
 		switch (data->vendor) {
 		case OFONO_VENDOR_CINTERION:
@@ -451,16 +412,10 @@ static void at_cmt_notify(GAtResult *result, gpointer user_data)
 
 	switch (data->vendor) {
 	case OFONO_VENDOR_CINTERION:
-		if (!cint_parse_cmt(result, &hexpdu, &tpdu_len)) {
-			ofono_error("Unable to parse CMT notification");
-			return;
-		}
+		if (!g_at_result_iter_next_number(&iter, &tpdu_len))
+			goto err;
 		break;
 	default:
-		if (!at_parse_cmt(result, &hexpdu, &tpdu_len)) {
-			ofono_error("Unable to parse CMT notification");
-			return;
-		}
 		if (!g_at_result_iter_skip_next(&iter))
 			goto err;
 
