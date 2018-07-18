@@ -19,6 +19,10 @@
  *
  */
 
+#include <glib.h>
+
+#include <ofono/types.h>
+
 /* 27.007 Section 7.3 <AcT> */
 enum access_technology {
 	ACCESS_TECHNOLOGY_GSM =			0,
@@ -41,11 +45,31 @@ enum network_registration_status {
 	NETWORK_REGISTRATION_STATUS_ROAMING =		5,
 };
 
+/* 27.007 Section 7.3 <stat> */
+enum operator_status {
+	OPERATOR_STATUS_UNKNOWN =	0,
+	OPERATOR_STATUS_AVAILABLE =	1,
+	OPERATOR_STATUS_CURRENT =	2,
+	OPERATOR_STATUS_FORBIDDEN =	3,
+};
+
 /* 27.007 Section 7.6 */
 enum clip_validity {
 	CLIP_VALIDITY_VALID =		0,
 	CLIP_VALIDITY_WITHHELD =	1,
 	CLIP_VALIDITY_NOT_AVAILABLE =	2,
+};
+
+/* 27.007 Section 7.29 */
+enum packet_bearer {
+	PACKET_BEARER_NONE =		0,
+	PACKET_BEARER_GPRS =		1,
+	PACKET_BEARER_EGPRS =		2,
+	PACKET_BEARER_UMTS =		3,
+	PACKET_BEARER_HSUPA =		4,
+	PACKET_BEARER_HSDPA =		5,
+	PACKET_BEARER_HSUPA_HSDPA =	6,
+	PACKET_BEARER_EPS =		7,
 };
 
 /* 27.007 Section 7.30 */
@@ -160,3 +184,4 @@ const char *registration_tech_to_string(int tech);
 const char *packet_bearer_to_string(int bearer);
 
 gboolean is_valid_apn(const char *apn);
+const char *call_status_to_string(enum call_status status);

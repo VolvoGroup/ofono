@@ -40,6 +40,7 @@ static GSList *g_modem_list = NULL;
 
 static int next_modem_id = 0;
 static gboolean powering_down = FALSE;
+static int modems_remaining = 0;
 
 static struct ofono_watchlist *g_modemwatches = NULL;
 
@@ -94,6 +95,7 @@ struct ofono_devinfo {
 	char *model;
 	char *revision;
 	char *serial;
+	char *svn;
 	unsigned int dun_watch;
 	const struct ofono_devinfo_driver *driver;
 	void *driver_data;
@@ -183,12 +185,14 @@ const char *ofono_modem_get_path(struct ofono_modem *modem)
 	return NULL;
 }
 
-const struct ofono_modem_driver *ofono_modem_get_driver(struct ofono_modem *modem)
+struct ofono_sim *ofono_modem_get_sim(struct ofono_modem *modem)
 {
-	if(modem)
-		return modem->driver;
+	return __ofono_atom_find(OFONO_ATOM_TYPE_SIM, modem);
+}
 
-	return NULL;
+struct ofono_gprs *ofono_modem_get_gprs(struct ofono_modem *modem)
+{
+	return __ofono_atom_find(OFONO_ATOM_TYPE_GPRS, modem);
 }
 
 struct ofono_atom *__ofono_modem_add_atom(struct ofono_modem *modem,
@@ -761,8 +765,12 @@ static DBusMessage *set_property_online(struct ofono_modem *modem,
 	if (ofono_modem_get_emergency_mode(modem) == TRUE)
 		return __ofono_error_emergency_active(msg);
 
-	if (modem_is_always_online(modem) == TRUE)
-		return __ofono_error_not_implemented(msg);
+	if (modem_is_always_online(modem) == TRUE) {
+		if (online)
+			return dbus_message_new_method_return(msg);
+		else
+			return __ofono_error_not_implemented(msg);
+	}
 
 	modem->pending = dbus_message_ref(msg);
 
@@ -790,6 +798,7 @@ void __ofono_modem_append_properties(struct ofono_modem *modem,
 	struct ofono_devinfo *info;
 	dbus_bool_t emergency = ofono_modem_get_emergency_mode(modem);
 	const char *strtype;
+	const char *system_path;
 
 	ofono_dbus_dict_append(dict, "Online", DBUS_TYPE_BOOLEAN,
 				&modem->online);
@@ -826,7 +835,17 @@ void __ofono_modem_append_properties(struct ofono_modem *modem,
 			ofono_dbus_dict_append(dict, "Serial",
 						DBUS_TYPE_STRING,
 						&info->serial);
+
+		if (info->svn)
+			ofono_dbus_dict_append(dict, "SoftwareVersionNumber",
+						DBUS_TYPE_STRING,
+						&info->svn);
 	}
+
+	system_path = ofono_modem_get_string(modem, "SystemPath");
+	if (system_path)
+		ofono_dbus_dict_append(dict, "SystemPath", DBUS_TYPE_STRING,
+					&system_path);
 
 	interfaces = g_new0(char *, g_slist_length(modem->interface_list) + 1);
 	for (i = 0, l = modem->interface_list; l; l = l->next, i++)
@@ -1267,7 +1286,7 @@ void ofono_modem_set_powered(struct ofono_modem *modem, ofono_bool_t powered)
 	modem->powered_pending = powered;
 
 	if (modem->powered == powered)
-		return;
+		goto out;
 
 	modem->powered = powered;
 	notify_powered_watches(modem);
@@ -1300,6 +1319,14 @@ void ofono_modem_set_powered(struct ofono_modem *modem, ofono_bool_t powered)
 		set_online(modem, FALSE);
 
 		modem_change_state(modem, MODEM_STATE_POWER_OFF);
+	}
+
+out:
+	if (powering_down && powered == FALSE) {
+		modems_remaining -= 1;
+
+		if (modems_remaining == 0)
+			__ofono_exit();
 	}
 }
 
@@ -1431,8 +1458,8 @@ void ofono_modem_remove_interface(struct ofono_modem *modem,
 	modem->interface_update = g_idle_add(trigger_interface_update, modem);
 }
 
-static void query_serial_cb(const struct ofono_error *error,
-				const char *serial, void *user)
+static void query_svn_cb(const struct ofono_error *error,
+				const char *svn, void *user)
 {
 	struct ofono_devinfo *info = user;
 	DBusConnection *conn = ofono_dbus_get_connection();
@@ -1441,12 +1468,38 @@ static void query_serial_cb(const struct ofono_error *error,
 	if (error->type != OFONO_ERROR_TYPE_NO_ERROR)
 		return;
 
+	info->svn = g_strdup(svn);
+
+	ofono_dbus_signal_property_changed(conn, path, OFONO_MODEM_INTERFACE,
+			"SoftwareVersionNumber", DBUS_TYPE_STRING, &info->svn);
+}
+
+static void query_svn(struct ofono_devinfo *info)
+{
+	if (info->driver->query_svn == NULL)
+		return;
+
+	info->driver->query_svn(info, query_svn_cb, info);
+}
+
+static void query_serial_cb(const struct ofono_error *error,
+				const char *serial, void *user)
+{
+	struct ofono_devinfo *info = user;
+	DBusConnection *conn = ofono_dbus_get_connection();
+	const char *path = __ofono_atom_get_path(info->atom);
+
+	if (error->type != OFONO_ERROR_TYPE_NO_ERROR)
+		goto out;
+
 	info->serial = g_strdup(serial);
 
 	ofono_dbus_signal_property_changed(conn, path,
 						OFONO_MODEM_INTERFACE,
 						"Serial", DBUS_TYPE_STRING,
 						&info->serial);
+out:
+	query_svn(info);
 }
 
 static void query_serial(struct ofono_devinfo *info)
@@ -1707,6 +1760,9 @@ static void devinfo_unregister(struct ofono_atom *atom)
 
 	g_free(info->serial);
 	info->serial = NULL;
+
+	g_free(info->svn);
+	info->svn = NULL;
 }
 
 void ofono_devinfo_register(struct ofono_devinfo *info)
@@ -1735,6 +1791,11 @@ void ofono_devinfo_set_data(struct ofono_devinfo *info, void *data)
 void *ofono_devinfo_get_data(struct ofono_devinfo *info)
 {
 	return info->driver_data;
+}
+
+struct ofono_modem *ofono_devinfo_get_modem(struct ofono_devinfo *info)
+{
+	return __ofono_atom_get_modem(info->atom);
 }
 
 static void unregister_property(gpointer data)
@@ -1915,7 +1976,7 @@ struct ofono_modem *ofono_modem_create(const char *name, const char *type)
 	else
 		snprintf(path, sizeof(path), "/%s", name);
 
-	if (__ofono_dbus_valid_object_path(path) == FALSE)
+	if (!dbus_validate_path(path, NULL))
 		return NULL;
 
 	modem = g_try_new0(struct ofono_modem, 1);
@@ -2222,6 +2283,9 @@ void ofono_modem_reset(struct ofono_modem *modem)
 	if (err == -EINPROGRESS)
 		return;
 
+	if (err < 0)
+		return;
+
 	modem_change_state(modem, MODEM_STATE_PRE_SIM);
 }
 
@@ -2266,7 +2330,7 @@ void ofono_modem_driver_unregister(const struct ofono_modem_driver *d)
 void __ofono_modem_shutdown(void)
 {
 	struct ofono_modem *modem;
-	ofono_bool_t powered_modems = FALSE;
+	ofono_bool_t powered_modems = FALSE; // FIXME
 	GSList *l;
 
 	powering_down = TRUE;
@@ -2286,8 +2350,11 @@ void __ofono_modem_shutdown(void)
 		powered_modems = TRUE;
 	}
 
-	if (powered_modems == FALSE)
-		__ofono_exit(0);
+	if (powered_modems == FALSE) // FIXME
+		__ofono_exit();
+
+	if (modems_remaining == 0)
+		__ofono_exit();
 }
 
 void __ofono_modem_foreach(ofono_modem_foreach_func func, void *userdata)

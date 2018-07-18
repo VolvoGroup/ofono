@@ -69,6 +69,7 @@ struct hfp {
 	struct hfp_slc_info info;
 	DBusMessage *msg;
 	struct ofono_handsfree_card *card;
+	unsigned int bcc_id;
 };
 
 static const char *none_prefix[] = { NULL };
@@ -175,11 +176,42 @@ static int service_level_connection(struct ofono_modem *modem,
 	return -EINPROGRESS;
 }
 
-static struct ofono_modem *modem_register(const char *device,
-				const char *device_address, const char *alias)
+static void modem_removed(GDBusProxy *proxy, void *user_data)
+{
+	struct ofono_modem *modem = user_data;
+
+	ofono_modem_remove(modem);
+}
+
+static void alias_changed(GDBusProxy *proxy, const char *name,
+					DBusMessageIter *iter, void *user_data)
+{
+	const char *alias;
+	struct ofono_modem *modem = user_data;
+
+	if (g_str_equal("Alias", name) == FALSE)
+		return;
+
+	dbus_message_iter_get_basic(iter, &alias);
+	ofono_modem_set_name(modem, alias);
+}
+
+static struct ofono_modem *modem_register(const char *device, GDBusProxy *proxy)
 {
 	struct ofono_modem *modem;
 	char *path;
+	DBusMessageIter iter;
+	const char *alias, *remote;
+
+	if (g_dbus_proxy_get_property(proxy, "Alias", &iter) == FALSE)
+		return NULL;
+
+	dbus_message_iter_get_basic(&iter, &alias);
+
+	if (g_dbus_proxy_get_property(proxy, "Address", &iter) == FALSE)
+		return NULL;
+
+	dbus_message_iter_get_basic(&iter, &remote);
 
 	path = g_strconcat("hfp", device, NULL);
 
@@ -190,11 +222,14 @@ static struct ofono_modem *modem_register(const char *device,
 	if (modem == NULL)
 		return NULL;
 
-	ofono_modem_set_string(modem, "Remote", device_address);
+	ofono_modem_set_string(modem, "Remote", remote);
 	ofono_modem_set_string(modem, "DevicePath", device);
 
 	ofono_modem_set_name(modem, alias);
 	ofono_modem_register(modem);
+
+	g_dbus_proxy_set_property_watch(proxy, alias_changed, modem);
+	g_dbus_proxy_set_removed_watch(proxy, modem_removed, modem);
 
 	return modem;
 }
@@ -372,7 +407,11 @@ static void bcc_cb(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct cb_data *cbd = user_data;
 	ofono_handsfree_card_connect_cb_t cb = cbd->cb;
+	struct ofono_handsfree_card *card = cbd->user;
+	struct hfp *hfp = ofono_handsfree_card_get_data(card);
 	struct ofono_error error;
+
+	hfp->bcc_id = 0;
 
 	decode_at_error(&error, g_at_result_final_response(result));
 
@@ -390,7 +429,10 @@ static void hfp16_card_connect(struct ofono_handsfree_card *card,
 			info->ag_features & HFP_AG_FEATURE_CODEC_NEGOTIATION) {
 		struct cb_data *cbd = cb_data_new(cb, data);
 
-		g_at_chat_send(info->chat, "AT+BCC", NULL, bcc_cb, cbd, g_free);
+		cbd->user = card;
+		hfp->bcc_id = g_at_chat_send(info->chat, "AT+BCC",
+						none_prefix, bcc_cb,
+						cbd, g_free);
 		return;
 	}
 
@@ -403,11 +445,40 @@ static void hfp16_card_connect(struct ofono_handsfree_card *card,
 	ofono_handsfree_card_connect_sco(card);
 }
 
+static void hfp16_sco_connected_hint(struct ofono_handsfree_card *card)
+{
+	struct hfp *hfp = ofono_handsfree_card_get_data(card);
+	struct hfp_slc_info *info = &hfp->info;
+	struct cb_data *cbd;
+	ofono_handsfree_card_connect_cb_t cb;
+
+	/*
+	 * SCO has just been connected, probably initiated by the AG.
+	 * If we have any outstanding BCC requests, then lets cancel these
+	 * as they're no longer needed
+	 */
+
+	if (hfp->bcc_id == 0)
+		return;
+
+	cbd = g_at_chat_get_userdata(info->chat, hfp->bcc_id);
+	if (cbd == NULL)
+		return;
+
+	cb = cbd->cb;
+	CALLBACK_WITH_SUCCESS(cb, cbd->data);
+
+	/* cbd will be freed once cancel is processed */
+	g_at_chat_cancel(info->chat, hfp->bcc_id);
+	hfp->bcc_id = 0;
+}
+
 static struct ofono_handsfree_card_driver hfp16_hf_driver = {
-	.name		= HFP16_HF_DRIVER,
-	.probe		= hfp16_card_probe,
-	.remove		= hfp16_card_remove,
-	.connect	= hfp16_card_connect,
+	.name			= HFP16_HF_DRIVER,
+	.probe			= hfp16_card_probe,
+	.remove			= hfp16_card_remove,
+	.connect		= hfp16_card_connect,
+	.sco_connected_hint	= hfp16_sco_connected_hint,
 };
 
 static ofono_bool_t device_path_compare(struct ofono_modem *modem,
@@ -462,6 +533,71 @@ static int get_version(DBusMessageIter *iter, uint16_t *version)
 	return -ENOENT;
 }
 
+static gboolean has_hfp_ag_uuid(DBusMessageIter *array)
+{
+	DBusMessageIter value;
+
+	if (dbus_message_iter_get_arg_type(array) != DBUS_TYPE_ARRAY)
+		return FALSE;
+
+	dbus_message_iter_recurse(array, &value);
+
+	while (dbus_message_iter_get_arg_type(&value) == DBUS_TYPE_STRING) {
+		const char *uuid;
+
+		dbus_message_iter_get_basic(&value, &uuid);
+
+		if (g_str_equal(uuid, HFP_AG_UUID) == TRUE)
+			return TRUE;
+
+		dbus_message_iter_next(&value);
+	}
+
+	return FALSE;
+}
+
+static void modem_unregister(struct ofono_modem *modem, GDBusProxy *proxy)
+{
+	ofono_modem_remove(modem);
+	g_dbus_proxy_set_removed_watch(proxy, NULL, NULL);
+	g_dbus_proxy_set_property_watch(proxy, NULL, NULL);
+}
+
+static void *device_changed(GDBusProxy *proxy, const char *path)
+{
+	DBusMessageIter iter;
+	dbus_bool_t paired;
+	struct ofono_modem *modem;
+
+	if (g_dbus_proxy_get_property(proxy, "Paired", &iter) == FALSE)
+		return NULL;
+
+	dbus_message_iter_get_basic(&iter, &paired);
+
+	modem = ofono_modem_find(device_path_compare, (void *) path);
+
+	if (paired == FALSE) {
+		if (modem != NULL)
+			modem_unregister(modem, proxy);
+		return NULL;
+	}
+
+	if (g_dbus_proxy_get_property(proxy, "UUIDs", &iter) == FALSE ||
+					has_hfp_ag_uuid(&iter) == FALSE) {
+		if (modem != NULL)
+			modem_unregister(modem, proxy);
+		return NULL;
+	}
+
+	/* Skip if modem already registered */
+	if (modem)
+		return modem;
+
+	modem = modem_register(path, proxy);
+
+	return modem;
+}
+
 static DBusMessage *profile_new_connection(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
@@ -504,10 +640,18 @@ static DBusMessage *profile_new_connection(DBusConnection *conn,
 
 	modem = ofono_modem_find(device_path_compare, (void *) device);
 	if (modem == NULL) {
-		close(fd);
-		return g_dbus_create_error(msg, BLUEZ_ERROR_INTERFACE
-					".Rejected",
-					"Unknown Bluetooth device");
+		GDBusProxy *proxy;
+
+		proxy = g_dbus_proxy_new(bluez, device, BLUEZ_DEVICE_INTERFACE);
+		modem = modem_register(device, proxy);
+		g_dbus_proxy_unref(proxy);
+
+		if (!modem) {
+			close(fd);
+			return g_dbus_create_error(msg, BLUEZ_ERROR_INTERFACE
+						".Rejected",
+						"Unknown Bluetooth device");
+		}
 	}
 
 	err = service_level_connection(modem, fd, version);
@@ -552,7 +696,9 @@ static DBusMessage *profile_new_connection(DBusConnection *conn,
 	if (version >= HFP_VERSION_1_6)
 		driver = HFP16_HF_DRIVER;
 
-	hfp->card = ofono_handsfree_card_create(0, driver, hfp);
+	hfp->card = ofono_handsfree_card_create(0,
+					OFONO_HANDSFREE_CARD_TYPE_HANDSFREE,
+					driver, hfp);
 	ofono_handsfree_card_set_data(hfp->card, hfp);
 
 	ofono_handsfree_card_set_local(hfp->card, local);
@@ -643,86 +789,8 @@ static void connect_handler(DBusConnection *conn, void *user_data)
 
 	DBG("Registering External Profile handler ...");
 
-	bt_register_profile(conn, HFP_HS_UUID, HFP_VERSION_1_6, "hfp_hf",
+	bt_register_profile(conn, HFP_HS_UUID, HFP_VERSION_1_7, "hfp_hf",
 					HFP_EXT_PROFILE_PATH, NULL, features);
-}
-
-static gboolean has_hfp_ag_uuid(DBusMessageIter *array)
-{
-	DBusMessageIter value;
-
-	if (dbus_message_iter_get_arg_type(array) != DBUS_TYPE_ARRAY)
-		return FALSE;
-
-	dbus_message_iter_recurse(array, &value);
-
-	while (dbus_message_iter_get_arg_type(&value) == DBUS_TYPE_STRING) {
-		const char *uuid;
-
-		dbus_message_iter_get_basic(&value, &uuid);
-
-		if (g_str_equal(uuid, HFP_AG_UUID) == TRUE)
-			return TRUE;
-
-		dbus_message_iter_next(&value);
-	}
-
-	return FALSE;
-}
-
-static void modem_removed(GDBusProxy *proxy, void *user_data)
-{
-	struct ofono_modem *modem = user_data;
-
-	ofono_modem_remove(modem);
-}
-
-static void alias_changed(GDBusProxy *proxy, const char *name,
-					DBusMessageIter *iter, void *user_data)
-{
-	const char *alias;
-	struct ofono_modem *modem = user_data;
-
-	if (g_str_equal("Alias", name) == FALSE)
-		return;
-
-	dbus_message_iter_get_basic(iter, &alias);
-	ofono_modem_set_name(modem, alias);
-}
-
-static void modem_register_from_proxy(GDBusProxy *proxy, const char *path)
-{
-	const char *alias, *remote;
-	DBusMessageIter iter;
-	dbus_bool_t paired;
-	struct ofono_modem *modem;
-
-	if (g_dbus_proxy_get_property(proxy, "Paired", &iter) == FALSE)
-		return;
-
-	dbus_message_iter_get_basic(&iter, &paired);
-	if (paired == FALSE)
-		return;
-
-	if (g_dbus_proxy_get_property(proxy, "UUIDs", &iter) == FALSE)
-		return;
-
-	if (has_hfp_ag_uuid(&iter) == FALSE)
-		return;
-
-	if (g_dbus_proxy_get_property(proxy, "Alias", &iter) == FALSE)
-		return;
-
-	dbus_message_iter_get_basic(&iter, &alias);
-
-	if (g_dbus_proxy_get_property(proxy, "Address", &iter) == FALSE)
-		return;
-
-	dbus_message_iter_get_basic(&iter, &remote);
-
-	modem = modem_register(path, remote, alias);
-	g_dbus_proxy_set_property_watch(proxy, alias_changed, modem);
-	g_dbus_proxy_set_removed_watch(proxy, modem_removed, modem);
 }
 
 static void proxy_added(GDBusProxy *proxy, void *user_data)
@@ -735,7 +803,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 	if (g_str_equal(BLUEZ_DEVICE_INTERFACE, interface) == FALSE)
 		return;
 
-	modem_register_from_proxy(proxy, path);
+	device_changed(proxy, path);
 }
 
 static void property_changed(GDBusProxy *proxy, const char *name,
@@ -749,10 +817,11 @@ static void property_changed(GDBusProxy *proxy, const char *name,
 	if (g_str_equal(BLUEZ_DEVICE_INTERFACE, interface) == FALSE)
 		return;
 
-	if (g_str_equal("Paired", name) != TRUE)
+	if (g_str_equal("Paired", name) != TRUE &&
+			g_str_equal("ServicesResolved", name) != TRUE)
 		return;
 
-	modem_register_from_proxy(proxy, path);
+	device_changed(proxy, path);
 }
 
 static int hfp_init(void)

@@ -46,6 +46,8 @@ struct ofono_devinfo_driver {
 			ofono_devinfo_query_cb_t cb, void *data);
 	void (*query_revision)(struct ofono_devinfo *info,
 			ofono_devinfo_query_cb_t cb, void *data);
+	void (*query_svn)(struct ofono_devinfo *info,
+			ofono_devinfo_query_cb_t cb, void *data);
 };
 
 int ofono_devinfo_driver_register(const struct ofono_devinfo_driver *d);
@@ -60,6 +62,8 @@ void ofono_devinfo_remove(struct ofono_devinfo *info);
 
 void ofono_devinfo_set_data(struct ofono_devinfo *info, void *data);
 void *ofono_devinfo_get_data(struct ofono_devinfo *info);
+
+struct ofono_modem *ofono_devinfo_get_modem(struct ofono_devinfo *info);
 
 #ifdef __cplusplus
 }

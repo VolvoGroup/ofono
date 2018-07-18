@@ -417,13 +417,18 @@ void ofono_ussd_notify(struct ofono_ussd *ussd, int status, int dcs,
 	}
 
 	if (status == OFONO_USSD_STATUS_TERMINATED) {
-		ussd_change_state(ussd, USSD_STATE_IDLE);
+		if (ussd->state == USSD_STATE_ACTIVE && data && data_len > 0) {
+			/* Interpret that as a Notify */
+			status = OFONO_USSD_STATUS_NOTIFY;
+		} else {
+			ussd_change_state(ussd, USSD_STATE_IDLE);
 
-		if (ussd->pending == NULL)
-			return;
+			if (ussd->pending == NULL)
+				return;
 
-		reply = __ofono_error_network_terminated(ussd->pending);
-		goto out;
+			reply = __ofono_error_network_terminated(ussd->pending);
+			goto out;
+		}
 	}
 
 	if (status == OFONO_USSD_STATUS_NOT_SUPPORTED) {
@@ -511,6 +516,20 @@ void ofono_ussd_notify(struct ofono_ussd *ussd, int status, int dcs,
 				DBUS_TYPE_STRING, &str, DBUS_TYPE_INVALID);
 
 		ussd_change_state(ussd, new_state);
+		goto free;
+	} else if (ussd->state == USSD_STATE_USER_ACTION &&
+				status != OFONO_USSD_STATUS_ACTION_REQUIRED) {
+		ussd_change_state(ussd, USSD_STATE_IDLE);
+
+		if (status == OFONO_USSD_STATUS_NOTIFY && str && str[0]) {
+			const char *path = __ofono_atom_get_path(ussd->atom);
+
+			g_dbus_emit_signal(conn, path,
+				OFONO_SUPPLEMENTARY_SERVICES_INTERFACE,
+				"NotificationReceived", DBUS_TYPE_STRING,
+				&str, DBUS_TYPE_INVALID);
+		}
+
 		goto free;
 	} else {
 		ofono_error("Received an unsolicited USSD but can't handle.");
@@ -791,6 +810,22 @@ static void ussd_unregister(struct ofono_atom *atom)
 	DBusConnection *conn = ofono_dbus_get_connection();
 	struct ofono_modem *modem = __ofono_atom_get_modem(atom);
 	const char *path = __ofono_atom_get_path(atom);
+	DBusMessage *reply;
+
+	if (ussd->pending) {
+		reply = __ofono_error_canceled(ussd->pending);
+		__ofono_dbus_pending_reply(&ussd->pending, reply);
+	}
+
+	if (ussd->cancel) {
+		reply = dbus_message_new_method_return(ussd->cancel);
+		__ofono_dbus_pending_reply(&ussd->cancel, reply);
+	}
+
+	if (ussd->req)
+		ussd_request_finish(ussd, -ECANCELED, 0, NULL, 0);
+
+	ussd_change_state(ussd, USSD_STATE_IDLE);
 
 	g_slist_free_full(ussd->ss_control_list, ssc_entry_destroy);
 	ussd->ss_control_list = NULL;

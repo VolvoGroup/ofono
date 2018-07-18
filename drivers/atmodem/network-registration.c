@@ -48,6 +48,7 @@ static const char *cops_prefix[] = { "+COPS:", NULL };
 static const char *csq_prefix[] = { "+CSQ:", NULL };
 static const char *cind_prefix[] = { "+CIND:", NULL };
 static const char *cmer_prefix[] = { "+CMER:", NULL };
+static const char *smoni_prefix[] = { "^SMONI:", NULL };
 static const char *zpas_prefix[] = { "+ZPAS:", NULL };
 static const char *option_tech_prefix[] = { "_OCTI:", "_OUWCTI:", NULL };
 static const char *cinterion_sind_prefix[] = { "^SIND:", NULL };
@@ -179,6 +180,31 @@ static int option_parse_tech(GAtResult *result)
 	return tech;
 }
 
+static int cinterion_parse_tech(GAtResult *result)
+{
+	int tech = -1;
+	GAtResultIter iter;
+	const char *technology;
+
+	g_at_result_iter_init(&iter, result);
+
+	if (!g_at_result_iter_next(&iter, "^SMONI: "))
+		return tech;
+
+	if (!g_at_result_iter_next_unquoted_string(&iter, &technology))
+		return tech;
+
+	if (strcmp(technology, "2G") == 0) {
+		tech = ACCESS_TECHNOLOGY_GSM_EGPRS;
+	} else if (strcmp(technology, "3G") == 0) {
+		tech = ACCESS_TECHNOLOGY_UTRAN;
+	} else if (strcmp(technology, "4G") == 0) {
+		tech = ACCESS_TECHNOLOGY_EUTRAN;
+	}
+
+	return tech;
+}
+
 static void at_creg_cb(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct cb_data *cbd = user_data;
@@ -204,6 +230,18 @@ static void at_creg_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		tech = nd->tech;
 
 	cb(&error, status, lac, ci, tech, cbd->data);
+}
+
+static void cinterion_query_tech_cb(gboolean ok, GAtResult *result,
+                                              gpointer user_data)
+{
+	struct tech_query *tq = user_data;
+	int tech;
+
+	tech = cinterion_parse_tech(result);
+
+	ofono_netreg_status_notify(tq->netreg,
+			tq->status, tq->lac, tq->ci, tech);
 }
 
 static void zte_tech_cb(gboolean ok, GAtResult *result, gpointer user_data)
@@ -839,13 +877,14 @@ static void telit_ciev_notify(GAtResult *result, gpointer user_data)
 	ofono_netreg_strength_notify(netreg, strength);
 }
 
-static void cinterion_ciev_notify(GAtResult* result, gpointer user_data)
+static void cinterion_ciev_notify(GAtResult *result, gpointer user_data)
 {
 	struct ofono_netreg *netreg = user_data;
 	struct netreg_data *nd = ofono_netreg_get_data(netreg);
 	const char *signal_identifier = "rssi";
 	const char *release_cause_identifier = "ceer";
 	const char *str;
+	const char *ind_str;
 	int strength;
 	GAtResultIter iter;
 
@@ -862,6 +901,8 @@ static void cinterion_ciev_notify(GAtResult* result, gpointer user_data)
 		if (!g_at_result_iter_next_number(&iter, &strength))
 			return;
 
+		DBG("rssi %d", strength);
+
 		if (strength == nd->signal_invalid)
 			strength = -1;
 		else
@@ -875,6 +916,24 @@ static void cinterion_ciev_notify(GAtResult* result, gpointer user_data)
 	{
 		/* TODO: Handle "ceer" type strings, and ship them to the correct handler */
 	}
+
+	if (!g_at_result_iter_next_unquoted_string(&iter, &ind_str))
+		return;
+
+	if (!g_str_equal(signal_identifier, ind_str))
+		return;
+
+	if (!g_at_result_iter_next_number(&iter, &strength))
+		return;
+
+	DBG("rssi %d", strength);
+
+	if (strength == nd->signal_invalid)
+		strength = -1;
+	else
+		strength = (strength * 100) / (nd->signal_max - nd->signal_min);
+
+	ofono_netreg_strength_notify(netreg, strength);
 }
 
 static void ctzv_notify(GAtResult *result, gpointer user_data)
@@ -1092,6 +1151,27 @@ static void huawei_mode_notify(GAtResult *result, gpointer user_data)
 		nd->tech = ACCESS_TECHNOLOGY_UTRAN;
 		break;
 	}
+}
+
+static void huawei_hcsq_notify(GAtResult *result, gpointer user_data)
+{
+	struct ofono_netreg *netreg = user_data;
+	struct netreg_data *nd = ofono_netreg_get_data(netreg);
+	GAtResultIter iter;
+	const char *mode;
+
+	g_at_result_iter_init(&iter, result);
+
+	if (!g_at_result_iter_next(&iter, "^HCSQ:"))
+		return;
+
+	if (!g_at_result_iter_next_string(&iter, &mode))
+		return;
+
+	if (!strcmp("LTE", mode))
+		nd->tech = ACCESS_TECHNOLOGY_EUTRAN;
+
+	/* for other technologies, notification ^MODE is used */
 }
 
 static void huawei_nwtime_notify(GAtResult *result, gpointer user_data)
@@ -1503,6 +1583,12 @@ static void creg_notify(GAtResult *result, gpointer user_data)
 					option_query_tech_cb, tq, g_free) > 0)
 			return;
 		break;
+    case OFONO_VENDOR_CINTERION:
+              if (g_at_chat_send(nd->chat, "AT^SMONI",
+                                      smoni_prefix,
+                                      cinterion_query_tech_cb, tq, g_free) > 0)
+                      return;
+              break;
 	}
 
 	g_free(tq);
@@ -1586,17 +1672,28 @@ static inline ofono_bool_t append_cmer_element(char *buf, int *len, int cap,
 static ofono_bool_t build_cmer_string(char *buf, int *cmer_opts,
 					struct netreg_data *nd)
 {
-	const char *mode;
+	const char *ind;
 	int len = sprintf(buf, "AT+CMER=");
+	const char *mode;
 
 	DBG("");
+
+	switch (nd->vendor) {
+	case OFONO_VENDOR_UBLOX_TOBY_L2:
+		/* UBX-13002752 R33: TOBY L2 doesn't support mode 2 and 3 */
+		mode = "1";
+		break;
+	default:
+		mode = "3";
+		break;
+	}
 
 	/*
 	 * Forward unsolicited result codes directly to the TE;
 	 * TA‑TE link specific inband technique used to embed result codes and
 	 * data when TA is in on‑line data mode
 	 */
-	if (!append_cmer_element(buf, &len, cmer_opts[0], "3", FALSE))
+	if (!append_cmer_element(buf, &len, cmer_opts[0], mode, FALSE))
 		return FALSE;
 
 	/* No keypad event reporting */
@@ -1613,14 +1710,14 @@ static ofono_bool_t build_cmer_string(char *buf, int *cmer_opts,
 		 * Telit does not support mode 1.
 		 * All indicator events shall be directed from TA to TE.
 		 */
-		mode = "2";
+		ind = "2";
 		break;
 	default:
 		/*
 		 * Only those indicator events, which are not caused by +CIND
 		 * shall be indicated by the TA to the TE.
 		 */
-		mode = "1";
+		ind = "1";
 		break;
 	}
 
@@ -1629,7 +1726,7 @@ static ofono_bool_t build_cmer_string(char *buf, int *cmer_opts,
 	 * <ind> indicates the indicator order number (as specified for +CIND)
 	 * and <value> is the new value of indicator.
 	 */
-	if (!append_cmer_element(buf, &len, cmer_opts[3], mode, TRUE))
+	if (!append_cmer_element(buf, &len, cmer_opts[3], ind, TRUE))
 		return FALSE;
 
 	return TRUE;
@@ -1975,6 +2072,10 @@ static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		g_at_chat_register(nd->chat, "^MODE:", huawei_mode_notify,
 						FALSE, netreg, NULL);
 
+		/* Register for 4G system mode reports */
+		g_at_chat_register(nd->chat, "^HCSQ:", huawei_hcsq_notify,
+						FALSE, netreg, NULL);
+
 		/* Register for network time reports */
 		g_at_chat_register(nd->chat, "^NWTIME:", huawei_nwtime_notify,
 						FALSE, netreg, NULL);
@@ -2039,8 +2140,25 @@ static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 						NULL, NULL, NULL);
 		break;
 	case OFONO_VENDOR_CINTERION:
+		/*
+		 * We can't set rssi bounds from Cinterion responses
+		 * so set them up to specified values here
+		 *
+		 * Cinterion rssi signal strength specified as:
+		 * 0      <= -112dBm
+		 * 1 - 4  signal strengh in 15 dB steps
+		 * 5      >= -51 dBm
+		 * 99     not known or undetectable
+		 */
+		nd->signal_min = 0;
+		nd->signal_max = 5;
+		nd->signal_invalid = 99;
+
+		/* Register for specific signal strength reports */
 		g_at_chat_send(nd->chat, "AT^SIND=?", cinterion_sind_prefix,
-						cinterion_sind_cb, netreg, NULL);
+				cinterion_sind_cb, netreg, NULL);
+		g_at_chat_register(nd->chat, "+CIEV:",
+				cinterion_ciev_notify, FALSE, netreg, NULL);
 		break;
 	case OFONO_VENDOR_NOKIA:
 	case OFONO_VENDOR_SAMSUNG:

@@ -32,22 +32,24 @@
 
 #include <gdbus.h>
 
+#ifdef HAVE_ELL
+#include <ell/ell.h>
+#endif
+
 #include "ofono.h"
 
 #define SHUTDOWN_GRACE_SECONDS 10
 
 static GMainLoop *event_loop;
-static int ret_code = 0;
 
-void __ofono_exit(int err)
+void __ofono_exit(void)
 {
-	ret_code = err;
 	g_main_loop_quit(event_loop);
 }
 
 static gboolean quit_eventloop(gpointer user_data)
 {
-	__ofono_exit(GPOINTER_TO_INT(user_data));
+	__ofono_exit();
 	return FALSE;
 }
 
@@ -75,7 +77,7 @@ static gboolean signal_handler(GIOChannel *channel, GIOCondition cond,
 		if (__terminated == 0) {
 			ofono_info("Terminating");
 			g_timeout_add_seconds(SHUTDOWN_GRACE_SECONDS,
-					quit_eventloop, GINT_TO_POINTER(0));
+						quit_eventloop, NULL);
 			__ofono_modem_shutdown();
 		}
 
@@ -139,10 +141,19 @@ static gboolean option_version = FALSE;
 static gboolean parse_debug(const char *key, const char *value,
 					gpointer user_data, GError **error)
 {
-	if (value)
-		option_debug = g_strdup(value);
-	else
+	if (value) {
+		if (option_debug) {
+			char *prev = option_debug;
+
+			option_debug = g_strconcat(prev, ",", value, NULL);
+			g_free(prev);
+		} else {
+			option_debug = g_strdup(value);
+		}
+	} else {
+		g_free(option_debug);
 		option_debug = g_strdup("*");
+	}
 
 	return TRUE;
 }
@@ -163,6 +174,32 @@ static GOptionEntry options[] = {
 	{ NULL },
 };
 
+#ifdef HAVE_ELL
+struct ell_event_source {
+	GSource source;
+	GPollFD pollfd;
+};
+
+static gboolean event_prepare(GSource *source, gint *timeout)
+{
+	int r = l_main_prepare();
+	*timeout = r;
+
+	return FALSE;
+}
+
+static gboolean event_check(GSource *source)
+{
+	l_main_iterate(0);
+	return FALSE;
+}
+
+static GSourceFuncs event_funcs = {
+	.prepare = event_prepare,
+	.check = event_check,
+};
+#endif
+
 int main(int argc, char **argv)
 {
 	GOptionContext *context;
@@ -170,7 +207,9 @@ int main(int argc, char **argv)
 	DBusConnection *conn;
 	DBusError error;
 	guint signal;
-	gboolean start;
+#ifdef HAVE_ELL
+	struct ell_event_source *source;
+#endif
 
 #ifdef NEED_THREADS
 	if (g_thread_supported() == FALSE)
@@ -214,6 +253,23 @@ int main(int argc, char **argv)
 	}
 #endif
 
+#ifdef HAVE_ELL
+	l_log_set_stderr();
+	l_debug_enable("*");
+	l_main_init();
+
+	source = (struct ell_event_source *) g_source_new(&event_funcs,
+					sizeof(struct ell_event_source));
+
+	source->pollfd.fd = l_main_get_epoll_fd();
+	source->pollfd.events = G_IO_IN | G_IO_HUP | G_IO_ERR;
+
+	g_source_add_poll((GSource *)source, &source->pollfd);
+	g_source_attach((GSource *) source,
+					g_main_loop_get_context(event_loop));
+#endif
+
+
 	signal = setup_signalfd();
 
 	__ofono_log_init(argv[0], option_debug, option_detach);
@@ -242,19 +298,14 @@ int main(int argc, char **argv)
 
 	__ofono_manager_init();
 
-	__ofono_handsfree_audio_manager_init();
-
-	start = __ofono_plugin_init(option_plugin, option_noplugin) == 0;
+	__ofono_plugin_init(option_plugin, option_noplugin);
 
 	g_free(option_plugin);
 	g_free(option_noplugin);
 
-	if (start)
-		g_main_loop_run(event_loop);
+	g_main_loop_run(event_loop);
 
 	__ofono_plugin_cleanup();
-
-	__ofono_handsfree_audio_manager_cleanup();
 
 	__ofono_manager_cleanup();
 
@@ -266,9 +317,15 @@ int main(int argc, char **argv)
 cleanup:
 	g_source_remove(signal);
 
+#ifdef HAVE_ELL
+	g_source_destroy((GSource *) source);
+	l_main_exit();
+#endif
 	g_main_loop_unref(event_loop);
 
 	__ofono_log_cleanup();
 
-	return ret_code;
+	g_free(option_debug);
+
+	return 0;
 }

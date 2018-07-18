@@ -320,8 +320,6 @@ static void cinterion_remove(struct ofono_modem *modem)
 
 	ofono_modem_set_data(modem, NULL);
 
-	g_at_chat_set_timeout_handlers(NULL, NULL);
-
 	g_free(data);
 }
 
@@ -415,7 +413,7 @@ static void cinterion_cfun_disable_cb(gboolean ok, GAtResult *result,
 
 	DBG("");
 
-	g_at_chat_cancel_all(data->app, FALSE);
+	g_at_chat_cancel_all(data->app);
 
 	if (ok)
 		ofono_modem_set_powered(modem, FALSE);

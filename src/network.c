@@ -50,14 +50,6 @@ enum network_registration_mode {
 	NETWORK_REGISTRATION_MODE_AUTO_ONLY =	5, /* Out of range of 27.007 */
 };
 
-/* 27.007 Section 7.3 <stat> */
-enum operator_status {
-	OPERATOR_STATUS_UNKNOWN =	0,
-	OPERATOR_STATUS_AVAILABLE =	1,
-	OPERATOR_STATUS_CURRENT =	2,
-	OPERATOR_STATUS_FORBIDDEN =	3,
-};
-
 struct ofono_netreg {
 	int status;
 	int location;
@@ -230,7 +222,7 @@ static void register_callback(const struct ofono_error *error, void *data)
 	if (error->type == OFONO_ERROR_TYPE_NO_ERROR)
 		reply = dbus_message_new_method_return(netreg->pending);
 	else
-		reply = __ofono_error_failed(netreg->pending);
+		reply = __ofono_error_from_error(error, netreg->pending);
 
 	__ofono_dbus_pending_reply(&netreg->pending, reply);
 
@@ -264,15 +256,6 @@ static struct network_operator_data *
 static void network_operator_destroy(gpointer user_data)
 {
 	struct network_operator_data *op = user_data;
-
-	/*
-	 * If an operator scan is issued in poor reception, we can get
-	 * an array of 0 operators while being registered, which means
-	 * current_operator needs to be NULLed during delete.
-	 * This prevents a use after free scenario.
-	 */
-	if (op->netreg->current_operator == op)
-		op->netreg->current_operator = NULL;
 
 	g_free(op);
 }
@@ -727,6 +710,7 @@ static gboolean update_operator_list(struct ofono_netreg *netreg, int total,
 	GSList *o;
 	GSList *compressed;
 	GSList *c;
+	struct network_operator_data *current_op = NULL;
 	gboolean changed = FALSE;
 
 	compressed = compress_operator_list(list, total);
@@ -770,8 +754,19 @@ static gboolean update_operator_list(struct ofono_netreg *netreg, int total,
 	if (netreg->operator_list)
 		changed = TRUE;
 
-	for (o = netreg->operator_list; o; o = o->next)
-		network_operator_dbus_unregister(netreg, o->data);
+	for (o = netreg->operator_list; o; o = o->next) {
+		struct network_operator_data *op = o->data;
+		if (op != op->netreg->current_operator)
+			network_operator_dbus_unregister(netreg, op);
+		else
+			current_op = op;
+	}
+
+	if (current_op) {
+		n = g_slist_prepend(n, current_op);
+		netreg->operator_list =
+			g_slist_remove(netreg->operator_list, current_op);
+	}
 
 	g_slist_free(netreg->operator_list);
 
@@ -1190,6 +1185,9 @@ static void notify_status_watches(struct ofono_netreg *netreg)
 	ofono_netreg_status_notify_cb_t notify;
 	const char *mcc = NULL;
 	const char *mnc = NULL;
+
+	if (netreg->status_watches == NULL)
+		return;
 
 	if (netreg->current_operator) {
 		mcc = netreg->current_operator->mcc;

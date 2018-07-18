@@ -82,9 +82,6 @@ gboolean g_at_chat_set_disconnect_function(GAtChat *chat,
 gboolean g_at_chat_set_debug(GAtChat *chat,
 				GAtDebugFunc func, gpointer user_data);
 
-gboolean g_at_chat_set_timeout_handlers(gboolean (*timeout_cb)(gpointer),
-								guint (*get_timeout_func)(const char *cmd));
-
 /*!
  * Queue an AT command for execution.  The command contents are given
  * in cmd.  Once the command executes, the callback function given by
@@ -150,8 +147,10 @@ guint g_at_chat_send_and_expect_short_prompt(GAtChat *chat, const char *cmd,
 				const char **valid_resp, GAtResultFunc func,
 				gpointer user_data, GDestroyNotify notify);
 
-gboolean g_at_chat_cancel(GAtChat *chat, guint id, gboolean polling);
-gboolean g_at_chat_cancel_all(GAtChat *chat, gboolean polling);
+gboolean g_at_chat_cancel(GAtChat *chat, guint id);
+gboolean g_at_chat_cancel_all(GAtChat *chat);
+
+gpointer g_at_chat_get_userdata(GAtChat *chat, guint id);
 
 guint g_at_chat_register(GAtChat *chat, const char *prefix,
 				GAtNotifyFunc func, gboolean expect_pdu,

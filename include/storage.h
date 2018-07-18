@@ -1,8 +1,8 @@
 /*
  *
- *  oFono - Open Source Telephony
+ *  oFono - Open Telephony stack for Linux
  *
- *  Copyright (C) 2008-2011  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2017  Jolla Ltd. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -13,17 +13,20 @@
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
  *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
- *
  */
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
+#ifndef __OFONO_STORAGE_H
+#define __OFONO_STORAGE_H
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-int main(int argc, char **argv)
-{
-	return 0;
+const char *ofono_config_dir(void);
+const char *ofono_storage_dir(void);
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif /* __OFONO_STORAGE_H */

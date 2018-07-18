@@ -40,7 +40,6 @@
 static struct server *server;
 static guint modemwatch_id;
 static GList *modems;
-static GHashTable *gprs_watches = NULL;
 
 static const gchar *dun_record =
 "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n"
@@ -130,29 +129,15 @@ static void gprs_watch(struct ofono_atom *atom,
 	}
 }
 
-static gboolean atom_watch_remove(gpointer key, gpointer value,
-					gpointer user_data)
-{
-	struct ofono_modem *modem = key;
-
-	__ofono_modem_remove_atom_watch(modem, GPOINTER_TO_UINT(value));
-
-	return TRUE;
-}
-
 static void modem_watch(struct ofono_modem *modem, gboolean added, void *user)
 {
-	int gprs;
 	DBG("modem: %p, added: %d", modem, added);
 
-	if (added == FALSE) {
-		g_hash_table_remove(gprs_watches, modem);
+	if (added == FALSE)
 		return;
-	}
 
-	gprs = __ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_GPRS,
+	__ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_GPRS,
 						gprs_watch, modem, NULL);
-	g_hash_table_insert(gprs_watches, modem, GUINT_TO_POINTER(gprs));
 }
 
 static void call_modemwatch(struct ofono_modem *modem, void *user)
@@ -163,8 +148,6 @@ static void call_modemwatch(struct ofono_modem *modem, void *user)
 static int dun_gw_init(void)
 {
 	DBG("");
-
-	gprs_watches = g_hash_table_new(g_direct_hash, g_direct_equal);
 
 	modemwatch_id = __ofono_modemwatch_add(modem_watch, NULL, NULL);
 
@@ -177,9 +160,6 @@ static void dun_gw_exit(void)
 {
 	__ofono_modemwatch_remove(modemwatch_id);
 	g_list_free(modems);
-
-	g_hash_table_foreach_remove(gprs_watches, atom_watch_remove, NULL);
-	g_hash_table_destroy(gprs_watches);
 
 	if (server) {
 		bluetooth_unregister_server(server);

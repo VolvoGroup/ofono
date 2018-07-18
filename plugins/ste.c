@@ -215,7 +215,7 @@ static void cfun_enable(gboolean ok, GAtResult *result, gpointer user_data)
 		ofono_modem_set_powered(modem, FALSE);
 
 		for (i = 0; i < NUM_CHAT; i++) {
-			g_at_chat_cancel_all(data->chat[i], FALSE);
+			g_at_chat_cancel_all(data->chat[i]);
 			g_at_chat_unregister_all(data->chat[i]);
 			g_at_chat_unref(data->chat[i]);
 			data->chat[i] = NULL;
@@ -313,6 +313,15 @@ static void esimsr_notify(GAtResult *result, gpointer user_data)
 	handle_sim_status(status, modem);
 }
 
+static void epev_notify(GAtResult *result, gpointer user_data)
+{
+	struct ofono_modem *modem = user_data;
+	struct ofono_sim *sim = ofono_modem_get_sim(modem);
+
+	if (sim)
+		ofono_sim_initialized_notify(sim);
+}
+
 static int ste_enable(struct ofono_modem *modem)
 {
 	struct ste_data *data = ofono_modem_get_data(modem);
@@ -353,6 +362,9 @@ static int ste_enable(struct ofono_modem *modem)
 	g_at_chat_register(data->chat[AT_SIM], "*ESIMSR:", esimsr_notify,
 				FALSE, modem, NULL);
 
+	g_at_chat_send(data->chat[AT_SIM], "AT*EPEE=1", NULL, NULL, NULL, NULL);
+	g_at_chat_register(data->chat[AT_SIM], "*EPEV", epev_notify,
+					FALSE, modem, NULL);
 	return -EINPROGRESS;
 
 error:
@@ -390,7 +402,7 @@ static int ste_disable(struct ofono_modem *modem)
 	DBG("%p", modem);
 
 	for (i = 0; i < NUM_CHAT; i++) {
-		g_at_chat_cancel_all(data->chat[i], FALSE);
+		g_at_chat_cancel_all(data->chat[i]);
 		g_at_chat_unregister_all(data->chat[i]);
 	}
 	g_at_chat_send(data->chat[AT_DEFAULT], "AT+CFUN=4", NULL,
@@ -423,9 +435,8 @@ static void ste_set_online(struct ofono_modem *modem, ofono_bool_t online,
 	if (g_at_chat_send(chat, command, NULL, set_online_cb, cbd, g_free))
 		return;
 
-	g_free(cbd);
-
 	CALLBACK_WITH_FAILURE(cb, cbd->data);
+	g_free(cbd);
 }
 
 static void ste_pre_sim(struct ofono_modem *modem)

@@ -762,7 +762,7 @@ static gboolean tx_next(gpointer user_data)
 		return FALSE;
 
 	if (g_queue_get_length(sms->txq) > 1
-			&& (entry->num_pdus - entry->cur_pdu) > 1)
+			|| (entry->num_pdus - entry->cur_pdu) > 1)
 		send_mms = 1;
 
 	sms->flags |= MESSAGE_MANAGER_FLAG_TXQ_ACTIVE;
@@ -1171,7 +1171,8 @@ static gboolean compute_incoming_msgid(GSList *sms_list,
 static void dispatch_app_datagram(struct ofono_sms *sms,
 					const struct ofono_uuid *uuid,
 					int dst, int src,
-					unsigned char *buf, unsigned len,
+					const unsigned char *buf,
+					unsigned int len,
 					const struct sms_address *addr,
 					const struct sms_scts *scts)
 {
@@ -1183,6 +1184,7 @@ static void dispatch_app_datagram(struct ofono_sms *sms,
 	ofono_sms_datagram_notify_cb_t notify;
 	struct sms_handler *h;
 	GSList *l;
+	gboolean dispatched = FALSE;
 
 	ts = sms_scts_to_time(scts, &remote);
 	localtime_r(&ts, &local);
@@ -1194,9 +1196,15 @@ static void dispatch_app_datagram(struct ofono_sms *sms,
 		if (!port_equal(dst, h->dst) || !port_equal(src, h->src))
 			continue;
 
+		dispatched = TRUE;
+
 		notify(sender, &remote, &local, dst, src, buf, len,
 			h->item.notify_data);
 	}
+
+	if (!dispatched)
+		ofono_info("Datagram with ports [%d,%d] not delivered",
+								dst, src);
 }
 
 static void dispatch_text_message(struct ofono_sms *sms,

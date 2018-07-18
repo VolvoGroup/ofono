@@ -93,6 +93,11 @@ Properties	boolean Present [readonly]
 
 			Contains the IMSI of the SIM, if available.
 
+		string ServiceProviderName [readonly, optional]
+
+			Contains the service provider name fetched from the
+			SIM card, if available.
+
 		string MobileCountryCode [readonly, optional]
 
 			Contains the Mobile Country Code (MCC) of the home
@@ -195,3 +200,8 @@ Properties	boolean Present [readonly]
 			might have changed the retry counters, i.e. calls to
 			ChangePin(), EnterPin(), ResetPin() LockPin(),
 			UnlockPin().
+
+		string ImsPrivateIdentity [readonly, optional]
+
+			Contains the SIM's ImsPrivateIdentity, read from the
+			ISIM.

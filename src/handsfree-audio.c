@@ -45,6 +45,7 @@
 #define HFP_AUDIO_CARD_INTERFACE	OFONO_SERVICE ".HandsfreeAudioCard"
 
 struct ofono_handsfree_card {
+	enum ofono_handsfree_card_type type;
 	char *remote;
 	char *local;
 	char *path;
@@ -69,13 +70,24 @@ static ofono_bool_t has_wideband = FALSE;
 static int defer_setup = 1;
 static ofono_bool_t transparent_sco = FALSE;
 
+static const char *card_type_to_string(enum ofono_handsfree_card_type type)
+{
+	switch (type) {
+	case OFONO_HANDSFREE_CARD_TYPE_HANDSFREE:
+		return "handsfree";
+	case OFONO_HANDSFREE_CARD_TYPE_GATEWAY:
+		return "gateway";
+	}
+	return "";
+}
+
 static uint16_t codec2setting(uint8_t codec)
 {
 	switch (codec) {
-		case HFP_CODEC_CVSD:
-			return BT_VOICE_CVSD_16BIT;
-		default:
-			return BT_VOICE_TRANSPARENT;
+	case HFP_CODEC_CVSD:
+		return BT_VOICE_CVSD_16BIT;
+	default:
+		return BT_VOICE_TRANSPARENT;
 	}
 }
 
@@ -100,6 +112,8 @@ static void send_new_connection(const char *card, int fd, uint8_t codec)
 {
 	DBusMessage *msg;
 	DBusMessageIter iter;
+
+	DBG("%p, fd: %d, codec: %hu", card, fd, codec);
 
 	msg = dbus_message_new_method_call(agent->owner, agent->path,
 				HFP_AUDIO_AGENT_INTERFACE, "NewConnection");
@@ -183,8 +197,14 @@ static gboolean sco_accept(GIOChannel *io, GIOCondition cond,
 		return TRUE;
 	}
 
+	DBG("SCO connection setup between local: %s and remote: %s",
+		local, remote);
+
 	send_new_connection(card->path, nsk, card->selected_codec);
 	close(nsk);
+
+	if (card->driver && card->driver->sco_connected_hint)
+		card->driver->sco_connected_hint(card);
 
 	return TRUE;
 }
@@ -247,6 +267,12 @@ static int sco_init(void)
 static void card_append_properties(struct ofono_handsfree_card *card,
 					DBusMessageIter *dict)
 {
+	const char *type;
+
+	type = card_type_to_string(card->type);
+	ofono_dbus_dict_append(dict, "Type",
+				DBUS_TYPE_STRING, &type);
+
 	ofono_dbus_dict_append(dict, "RemoteAddress",
 				DBUS_TYPE_STRING, &card->remote);
 
@@ -299,6 +325,13 @@ static gboolean sco_connect_cb(GIOChannel *io, GIOCondition cond,
 	}
 
 	sk = g_io_channel_unix_get_fd(io);
+
+	if (card->msg && dbus_message_has_member(card->msg, "Acquire")) {
+		reply = g_dbus_create_reply(card->msg, DBUS_TYPE_UNIX_FD, &sk,
+					DBUS_TYPE_BYTE, &card->selected_codec,
+					DBUS_TYPE_INVALID);
+		goto done;
+	}
 
 	send_new_connection(card->path, sk, card->selected_codec);
 
@@ -377,6 +410,9 @@ static const GDBusMethodTable card_methods[] = {
 			NULL, GDBUS_ARGS({ "properties", "a{sv}" }),
 			card_get_properties) },
 	{ GDBUS_ASYNC_METHOD("Connect", NULL, NULL, card_connect) },
+	{ GDBUS_ASYNC_METHOD("Acquire", NULL,
+			GDBUS_ARGS({"sco", "h"}, {"codec", "y"}),
+			card_connect) },
 	{ }
 };
 
@@ -387,14 +423,16 @@ static const GDBusSignalTable card_signals[] = {
 };
 
 struct ofono_handsfree_card *ofono_handsfree_card_create(unsigned int vendor,
-							const char *driver,
-							void *data)
+					enum ofono_handsfree_card_type type,
+					const char *driver,
+					void *data)
 {
 	struct ofono_handsfree_card *card;
 	GSList *l;
 
 	card = g_new0(struct ofono_handsfree_card, 1);
 
+	card->type = type;
 	card->selected_codec = HFP_CODEC_CVSD;
 
 	card_list = g_slist_prepend(card_list, card);
@@ -845,6 +883,8 @@ void ofono_handsfree_audio_ref(void)
 	if (ref_count != 1)
 		return;
 
+	__ofono_handsfree_audio_manager_init();
+
 	if (!g_dbus_register_interface(ofono_dbus_get_connection(),
 					OFONO_MANAGER_PATH,
 					HFP_AUDIO_MANAGER_INTERFACE,
@@ -873,6 +913,8 @@ void ofono_handsfree_audio_unref(void)
 		agent_release(agent);
 		agent_free(agent);
 	}
+
+	__ofono_handsfree_audio_manager_cleanup();
 }
 
 int __ofono_handsfree_audio_manager_init(void)
@@ -882,15 +924,11 @@ int __ofono_handsfree_audio_manager_init(void)
 
 void __ofono_handsfree_audio_manager_cleanup(void)
 {
-	if (ref_count == 0)
+	if (ref_count != 0)
 		return;
 
-	ofono_error("Handsfree Audio manager not cleaned up properly,"
-			"fixing...");
-
-	ref_count = 1;
-	ofono_handsfree_audio_unref();
-
-	if (sco_watch > 0)
+	if (sco_watch > 0) {
 		g_source_remove(sco_watch);
+		sco_watch = 0;
+	}
 }

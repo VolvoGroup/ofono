@@ -807,7 +807,7 @@ static void cint_lock_status_cb(gboolean ok, GAtResult *result,
 {
 	struct cb_data *cbd = user_data;
 	GAtResultIter iter;
-	ofono_sim_locked_cb_t cb = cbd->cb;
+	ofono_query_facility_lock_cb_t cb = cbd->cb;
 	struct ofono_error error;
 	int locked;
 
@@ -834,7 +834,7 @@ static void cint_lock_status_cb(gboolean ok, GAtResult *result,
 
 static void cint_pin_query_enabled(struct ofono_sim *sim,
 				enum ofono_sim_password_type passwd_type,
-				ofono_sim_locked_cb_t cb, void *data)
+				ofono_query_facility_lock_cb_t cb, void *data)
 {
 	struct sim_data *sd = ofono_sim_get_data(sim);
 	struct cb_data *cbd = cb_data_new(cb, data);
@@ -941,7 +941,7 @@ static struct ofono_sim_driver driver = {
 	.reset_passwd		= cint_pin_send_puk,
 	.lock			= cint_pin_enable,
 	.change_passwd		= cint_change_passwd,
-	.query_locked		= cint_pin_query_enabled,
+	.query_facility_lock		= cint_pin_query_enabled,
 };
 
 void cint_sim_init(void)

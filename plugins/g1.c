@@ -148,7 +148,7 @@ static int g1_disable(struct ofono_modem *modem)
 	DBG("");
 
 	/* power down modem */
-	g_at_chat_cancel_all(chat, FALSE);
+	g_at_chat_cancel_all(chat);
 	g_at_chat_unregister_all(chat);
 	g_at_chat_send(chat, "AT+CFUN=0", NULL, cfun_set_off_cb, modem, NULL);
 

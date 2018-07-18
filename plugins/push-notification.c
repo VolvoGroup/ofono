@@ -41,31 +41,25 @@
 #define PUSH_NOTIFICATION_INTERFACE "org.ofono.PushNotification"
 #define AGENT_INTERFACE "org.ofono.PushNotificationAgent"
 
-#define WAP_PUSH_SRC_PORT 9200
+#define WAP_PUSH_SRC_PORT -1
 #define WAP_PUSH_DST_PORT 2948
 
 static unsigned int modemwatch_id;
-static GHashTable *sms_watches = NULL;
 
 struct push_notification {
 	struct ofono_modem *modem;
 	struct ofono_sms *sms;
 	struct sms_agent *agent;
-	unsigned int push_watch[2];
+	unsigned int push_watch;
 };
 
 static void agent_exited(void *userdata)
 {
 	struct push_notification *pn = userdata;
 
-	if (pn->push_watch[0] > 0) {
-		__ofono_sms_datagram_watch_remove(pn->sms, pn->push_watch[0]);
-		pn->push_watch[0] = 0;
-	}
-
-	if (pn->push_watch[1] > 0) {
-		__ofono_sms_datagram_watch_remove(pn->sms, pn->push_watch[1]);
-		pn->push_watch[1] = 0;
+	if (pn->push_watch > 0) {
+		__ofono_sms_datagram_watch_remove(pn->sms, pn->push_watch);
+		pn->push_watch = 0;
 	}
 
 	pn->agent = NULL;
@@ -102,7 +96,7 @@ static DBusMessage *push_notification_register_agent(DBusConnection *conn,
 					DBUS_TYPE_INVALID) == FALSE)
 		return __ofono_error_invalid_args(msg);
 
-	if (!__ofono_dbus_valid_object_path(agent_path))
+	if (!dbus_validate_path(agent_path, NULL))
 		return __ofono_error_invalid_format(msg);
 
 	pn->agent = sms_agent_new(AGENT_INTERFACE,
@@ -114,16 +108,11 @@ static DBusMessage *push_notification_register_agent(DBusConnection *conn,
 
 	sms_agent_set_removed_notify(pn->agent, agent_exited, pn);
 
-	pn->push_watch[0] = __ofono_sms_datagram_watch_add(pn->sms,
+	pn->push_watch = __ofono_sms_datagram_watch_add(pn->sms,
 							push_received,
 							WAP_PUSH_DST_PORT,
 							WAP_PUSH_SRC_PORT,
 							pn, NULL);
-
-	pn->push_watch[1] = __ofono_sms_datagram_watch_add(pn->sms,
-							push_received,
-							WAP_PUSH_DST_PORT,
-							0, pn, NULL);
 
 	return dbus_message_new_method_return(msg);
 }
@@ -167,23 +156,12 @@ static void push_notification_cleanup(gpointer user)
 	DBG("%p", pn);
 
 	/* The push watch was already cleaned up */
-	pn->push_watch[0] = 0;
-	pn->push_watch[1] = 0;
+	pn->push_watch = 0;
 	pn->sms = NULL;
 
 	sms_agent_free(pn->agent);
 
 	ofono_modem_remove_interface(pn->modem, PUSH_NOTIFICATION_INTERFACE);
-}
-
-static gboolean atom_watch_remove(gpointer key, gpointer value,
-					gpointer user_data)
-{
-	struct ofono_modem *modem = key;
-
-	__ofono_modem_remove_atom_watch(modem, GPOINTER_TO_UINT(value));
-
-	return TRUE;
 }
 
 static void sms_watch(struct ofono_atom *atom,
@@ -219,22 +197,18 @@ static void sms_watch(struct ofono_atom *atom,
 static void modem_watch(struct ofono_modem *modem, gboolean added, void *user)
 {
 	struct push_notification *pn;
-	int sms;
 	DBG("modem: %p, added: %d", modem, added);
 
-	if (added == FALSE) {
-		g_hash_table_remove(sms_watches, modem);
+	if (added == FALSE)
 		return;
-	}
 
 	pn = g_try_new0(struct push_notification, 1);
 	if (pn == NULL)
 		return;
 
 	pn->modem = modem;
-	sms = __ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_SMS,
-						sms_watch, pn, g_free);
-	g_hash_table_insert(sms_watches, modem, GUINT_TO_POINTER(sms));
+	__ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_SMS,
+					sms_watch, pn, g_free);
 }
 
 static void call_modemwatch(struct ofono_modem *modem, void *user)
@@ -245,8 +219,6 @@ static void call_modemwatch(struct ofono_modem *modem, void *user)
 static int push_notification_init(void)
 {
 	DBG("");
-
-	sms_watches = g_hash_table_new(g_direct_hash, g_direct_equal);
 
 	modemwatch_id = __ofono_modemwatch_add(modem_watch, NULL, NULL);
 
@@ -260,9 +232,6 @@ static void push_notification_exit(void)
 	DBG("");
 
 	__ofono_modemwatch_remove(modemwatch_id);
-
-	g_hash_table_foreach_remove(sms_watches, atom_watch_remove, NULL);
-	g_hash_table_destroy(sms_watches);
 }
 
 OFONO_PLUGIN_DEFINE(push_notification, "Push Notification Plugin", VERSION,

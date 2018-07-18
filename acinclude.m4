@@ -15,13 +15,14 @@ AC_DEFUN([COMPILER_FLAGS], [
 		CFLAGS="-Wall -O2 -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2"
 	fi
 	if (test "$USE_MAINTAINER_MODE" = "yes"); then
-		CFLAGS="$CFLAGS -Werror -Wextra"
+#FIXME		CFLAGS="$CFLAGS -Werror -Wextra"
 		CFLAGS="$CFLAGS -Wno-unused-parameter"
 		CFLAGS="$CFLAGS -Wno-missing-field-initializers"
 		CFLAGS="$CFLAGS -Wdeclaration-after-statement"
 		CFLAGS="$CFLAGS -Wmissing-declarations"
 		CFLAGS="$CFLAGS -Wredundant-decls"
 		CFLAGS="$CFLAGS -Wcast-align"
+		CFLAGS="$CFLAGS -Wno-format-truncation"
 		CFLAGS="$CFLAGS -DG_DISABLE_DEPRECATED"
 	fi
 ])

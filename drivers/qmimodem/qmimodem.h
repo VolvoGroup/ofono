@@ -48,8 +48,14 @@ extern void qmi_gprs_exit(void);
 extern void qmi_gprs_context_init(void);
 extern void qmi_gprs_context_exit(void);
 
+extern void qmi_lte_init(void);
+extern void qmi_lte_exit(void);
+
 extern void qmi_radio_settings_init(void);
 extern void qmi_radio_settings_exit(void);
 
 extern void qmi_location_reporting_init(void);
 extern void qmi_location_reporting_exit(void);
+
+extern void qmi_netmon_init(void);
+extern void qmi_netmon_exit(void);

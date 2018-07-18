@@ -29,8 +29,14 @@ extern "C" {
 #include <ofono/types.h>
 
 struct ofono_gprs_context;
+struct ofono_modem;
 
-#define OFONO_GPRS_MAX_APN_LENGTH 127
+/*
+ * ETSI 123.003, Section 9.1:
+ * the APN has, after encoding as defined in the paragraph below, a maximum
+ * length of 100 octets
+ */
+#define OFONO_GPRS_MAX_APN_LENGTH 100
 #define OFONO_GPRS_MAX_USERNAME_LENGTH 63
 #define OFONO_GPRS_MAX_PASSWORD_LENGTH 255
 
@@ -55,7 +61,6 @@ enum ofono_gprs_auth_method {
 
 struct ofono_gprs_primary_context {
 	unsigned int cid;
-	int direction;
 	char apn[OFONO_GPRS_MAX_APN_LENGTH + 1];
 	char username[OFONO_GPRS_MAX_USERNAME_LENGTH + 1];
 	char password[OFONO_GPRS_MAX_PASSWORD_LENGTH + 1];
@@ -75,13 +80,16 @@ struct ofono_gprs_context_driver {
 					unsigned int id, const char *apn,
 					ofono_gprs_context_cb_t cb, void *data);
 	void (*activate_primary)(struct ofono_gprs_context *gc,
-					const struct ofono_gprs_primary_context *ctx,
-					ofono_gprs_context_cb_t cb, void *data);
+				const struct ofono_gprs_primary_context *ctx,
+				ofono_gprs_context_cb_t cb, void *data);
 	void (*deactivate_primary)(struct ofono_gprs_context *gc,
 					unsigned int id,
 					ofono_gprs_context_cb_t cb, void *data);
 	void (*detach_shutdown)(struct ofono_gprs_context *gc,
 					unsigned int id);
+	void (*read_settings)(struct ofono_gprs_context *gc,
+				unsigned int cid,
+				ofono_gprs_context_cb_t cb, void *data);
 };
 
 void ofono_gprs_context_deactivated(struct ofono_gprs_context *gc,
@@ -104,6 +112,8 @@ struct ofono_modem *ofono_gprs_context_get_modem(struct ofono_gprs_context *gc);
 
 void ofono_gprs_context_set_type(struct ofono_gprs_context *gc,
 					enum ofono_gprs_context_type type);
+enum ofono_gprs_context_type ofono_gprs_context_get_type(
+						struct ofono_gprs_context *gc);
 
 void ofono_gprs_context_set_interface(struct ofono_gprs_context *gc,
 					const char *interface);
@@ -113,6 +123,8 @@ void ofono_gprs_context_set_ipv4_address(struct ofono_gprs_context *gc,
 						ofono_bool_t static_ip);
 void ofono_gprs_context_set_ipv4_netmask(struct ofono_gprs_context *gc,
 						const char *netmask);
+void ofono_gprs_context_set_ipv4_prefix_length(struct ofono_gprs_context *gc,
+						unsigned int prefix);
 void ofono_gprs_context_set_ipv4_gateway(struct ofono_gprs_context *gc,
 						const char *gateway);
 void ofono_gprs_context_set_ipv4_dns_servers(struct ofono_gprs_context *gc,

@@ -722,7 +722,7 @@ static DBusMessage *stk_register_agent(DBusConnection *conn,
 					DBUS_TYPE_INVALID) == FALSE)
 		return __ofono_error_invalid_args(msg);
 
-	if (!__ofono_dbus_valid_object_path(agent_path))
+	if (!dbus_validate_path(agent_path, NULL))
 		return __ofono_error_invalid_format(msg);
 
 	stk->default_agent = stk_agent_new(agent_path,
@@ -834,7 +834,7 @@ static DBusMessage *stk_select_item(DBusConnection *conn,
 					DBUS_TYPE_INVALID) == FALSE)
 		return __ofono_error_invalid_args(msg);
 
-	if (!__ofono_dbus_valid_object_path(agent_path))
+	if (!dbus_validate_path(agent_path, NULL))
 		return __ofono_error_invalid_format(msg);
 
 	for (i = 0; i < selection && menu->items[i].text; i++);
@@ -1443,8 +1443,10 @@ static void set_get_inkey_duration(struct stk_duration *duration,
 	switch (duration->unit) {
 	case STK_DURATION_TYPE_MINUTES:
 		interval = (interval + 59) / 60;
+		break;
 	case STK_DURATION_TYPE_SECONDS:
 		interval = (interval + 9) / 10;
+		break;
 	case STK_DURATION_TYPE_SECOND_TENTHS:
 		break;
 	}
@@ -3130,11 +3132,6 @@ void ofono_stk_driver_unregister(const struct ofono_stk_driver *d)
 	g_drivers = g_slist_remove(g_drivers, (void *) d);
 }
 
-static void free_envelope_item(gpointer pointer, gpointer user_data)
-{
-	g_free(pointer);
-}
-
 static void stk_unregister(struct ofono_atom *atom)
 {
 	struct ofono_stk *stk = __ofono_atom_get_data(atom);
@@ -3167,8 +3164,7 @@ static void stk_unregister(struct ofono_atom *atom)
 		stk->main_menu = NULL;
 	}
 
-	g_queue_foreach(stk->envelope_q, free_envelope_item, NULL);
-	g_queue_free(stk->envelope_q);
+	g_queue_free_full(stk->envelope_q, g_free);
 
 	ofono_modem_remove_interface(modem, OFONO_STK_INTERFACE);
 	g_dbus_unregister_interface(conn, path, OFONO_STK_INTERFACE);

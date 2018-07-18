@@ -31,14 +31,12 @@
 #include <errno.h>
 
 #include <glib.h>
-#include <ofono.h>
 
 #include "ringbuffer.h"
 #include "gatchat.h"
 #include "gatio.h"
 
 /* #define WRITE_SCHEDULER_DEBUG 1 */
-#define AT_COMMAND_DEBUG 1
 
 #define COMMAND_FLAG_EXPECT_PDU			0x1
 #define COMMAND_FLAG_EXPECT_SHORT_PROMPT	0x2
@@ -51,11 +49,9 @@ static const char *none_prefix[] = { NULL };
 struct at_command {
 	char *cmd;
 	char **prefixes;
-	guint bytes_written;
 	guint flags;
 	guint id;
 	guint gid;
-	guint timeout_source;
 	GAtResultFunc callback;
 	GAtNotifyFunc listing;
 	gpointer user_data;
@@ -86,6 +82,7 @@ struct at_chat {
 	guint next_gid;				/* Next group id */
 	GAtIO *io;				/* AT IO */
 	GQueue *command_queue;			/* Command queue */
+	guint cmd_bytes_written;		/* bytes written from cmd */
 	GHashTable *notify_list;		/* List of notification reg */
 	GAtDisconnectFunc user_disconnect;	/* user disconnect func */
 	gpointer user_disconnect_data;		/* user disconnect data */
@@ -120,9 +117,6 @@ struct terminator_info {
 	int len;
 	gboolean success;
 };
-
-static gboolean (*at_modem_command_timeout_cb)(gpointer) = NULL;
-static guint (*at_modem_get_timeout_func)(const char *cmd) = NULL;
 
 static gboolean node_is_destroyed(struct at_notify_node *node, gpointer user)
 {
@@ -248,10 +242,6 @@ static struct at_command *at_command_create(guint gid, const char *cmd,
 	gsize len;
 	char **prefixes = NULL;
 
-#ifdef AT_COMMAND_DEBUG
-	DBG("Out: %s", cmd);
-#endif
-
 	if (prefix_list) {
 		int num_prefixes = 0;
 		int i;
@@ -295,8 +285,6 @@ static struct at_command *at_command_create(guint gid, const char *cmd,
 	c->cmd[len] = '\0';
 
 	c->gid = gid;
-	c->bytes_written = 0;
-	c->timeout_source = 0;
 	c->flags = flags;
 	c->prefixes = prefixes;
 	c->callback = func;
@@ -311,9 +299,6 @@ static void at_command_destroy(struct at_command *cmd)
 {
 	if (cmd->notify)
 		cmd->notify(cmd->user_data);
-
-	if (cmd->timeout_source)
-		g_source_remove(cmd->timeout_source);
 
 	g_strfreev(cmd->prefixes);
 	g_free(cmd->cmd);
@@ -455,10 +440,7 @@ static void at_chat_finish_command(struct at_chat *p, gboolean ok, char *final)
 	if (cmd == NULL)
 		return;
 
-	if (cmd->timeout_source) {
-		g_source_remove(cmd->timeout_source);
-		cmd->timeout_source = 0;
-	}
+	p->cmd_bytes_written = 0;
 
 	if (g_queue_peek_head(p->command_queue))
 		chat_wakeup_writer(p);
@@ -603,8 +585,8 @@ static void have_line(struct at_chat *p, char *str)
 
 	cmd = g_queue_peek_head(p->command_queue);
 
-	if (cmd && cmd->bytes_written > 0) {
-		char c = cmd->cmd[cmd->bytes_written - 1];
+	if (cmd && p->cmd_bytes_written > 0) {
+		char c = cmd->cmd[p->cmd_bytes_written - 1];
 
 		/* We check that we have submitted a terminator, in which case
 		 * a command might have failed or completed successfully
@@ -674,8 +656,8 @@ static void have_pdu(struct at_chat *p, char *pdu)
 	cmd = g_queue_peek_head(p->command_queue);
 
 	if (cmd && (cmd->flags & COMMAND_FLAG_EXPECT_PDU) &&
-			cmd->bytes_written > 0) {
-		char c = cmd->cmd[cmd->bytes_written - 1];
+			p->cmd_bytes_written > 0) {
+		char c = cmd->cmd[p->cmd_bytes_written - 1];
 
 		if (c == '\r')
 			listing_pdu = TRUE;
@@ -742,10 +724,6 @@ static char *extract_line(struct at_chat *p, struct ring_buffer *rbuf)
 
 	line[line_length] = '\0';
 
-#ifdef AT_COMMAND_DEBUG
-	DBG("In: %s", line);
-#endif
-
 	return line;
 }
 
@@ -786,17 +764,11 @@ static void new_bytes(struct ring_buffer *rbuf, gpointer user_data)
 			break;
 
 		case G_AT_SYNTAX_RESULT_PROMPT:
-#ifdef AT_COMMAND_DEBUG
-			extract_line(p, rbuf);
-#endif
 			chat_wakeup_writer(p);
 			ring_buffer_drain(rbuf, p->read_so_far);
 			break;
 
 		default:
-#ifdef AT_COMMAND_DEBUG
-			extract_line(p, rbuf);
-#endif
 			ring_buffer_drain(rbuf, p->read_so_far);
 			break;
 		}
@@ -879,7 +851,7 @@ static gboolean can_write_data(gpointer data)
 	 * written the entire command out to the io channel,
 	 * cancel write watcher
 	 */
-	if (cmd->bytes_written >= len)
+	if (chat->cmd_bytes_written >= len)
 		return FALSE;
 
 	if (chat->wakeup) {
@@ -892,7 +864,7 @@ static gboolean can_write_data(gpointer data)
 			wakeup_first = TRUE;
 	}
 
-	if (cmd->bytes_written == 0 && wakeup_first == TRUE) {
+	if (chat->cmd_bytes_written == 0 && wakeup_first == TRUE) {
 		cmd = at_command_create(0, chat->wakeup, none_prefix, 0,
 					NULL, wakeup_cb, chat, NULL, TRUE);
 		if (cmd == NULL)
@@ -906,12 +878,12 @@ static gboolean can_write_data(gpointer data)
 						wakeup_no_response, chat);
 	}
 
-	towrite = len - cmd->bytes_written;
+	towrite = len - chat->cmd_bytes_written;
 
-	cr = strchr(cmd->cmd + cmd->bytes_written, '\r');
+	cr = strchr(cmd->cmd + chat->cmd_bytes_written, '\r');
 
 	if (cr)
-		towrite = cr - (cmd->cmd + cmd->bytes_written) + 1;
+		towrite = cr - (cmd->cmd + chat->cmd_bytes_written) + 1;
 
 #ifdef WRITE_SCHEDULER_DEBUG
 	limiter = towrite;
@@ -921,7 +893,7 @@ static gboolean can_write_data(gpointer data)
 #endif
 
 	bytes_written = g_at_io_write(chat->io,
-					cmd->cmd + cmd->bytes_written,
+					cmd->cmd + chat->cmd_bytes_written,
 #ifdef WRITE_SCHEDULER_DEBUG
 					limiter
 #else
@@ -929,46 +901,20 @@ static gboolean can_write_data(gpointer data)
 #endif
 					);
 
-#ifdef AT_COMMAND_DEBUG
-	DBG("%s\r", cmd->cmd + cmd->bytes_written);
-#endif
-
 	if (bytes_written == 0)
 		return FALSE;
 
-	cmd->bytes_written += bytes_written;
+	chat->cmd_bytes_written += bytes_written;
 
 	if (bytes_written < towrite)
 		return TRUE;
-
-	/*
-	 * If we have timeout handlers, set timeouts on the AT commands.
-	 */
-	if (at_modem_command_timeout_cb && at_modem_get_timeout_func) {
-		/*
-		 * Some commands may cause repeated calls to this function
-		 * with the same at_command struct. Since this means the modem
-		 * is responsive, we'll just re-set the timeout.
-		 * Not doing this results in leaked at_modem_command_timeout_cb
-		 * callbacks that causes the modem to reset unecessarily.
-		 */
-		if (cmd->timeout_source)
-			g_source_remove(cmd->timeout_source);
-
-		cmd->timeout_source = g_timeout_add_seconds(
-				at_modem_get_timeout_func(cmd->cmd),
-				at_modem_command_timeout_cb,
-				NULL);
-	} else {
-		cmd->timeout_source = 0;
-	}
 
 	/*
 	 * If we're expecting a short prompt, set the hint for all lines
 	 * sent to the modem except the last
 	 */
 	if ((cmd->flags & COMMAND_FLAG_EXPECT_SHORT_PROMPT) &&
-			cmd->bytes_written < len &&
+			chat->cmd_bytes_written < len &&
 			chat->syntax->set_hint)
 		chat->syntax->set_hint(chat->syntax,
 					G_AT_SYNTAX_EXPECT_SHORT_PROMPT);
@@ -1057,15 +1003,6 @@ static gboolean at_chat_set_debug(struct at_chat *chat,
 	return TRUE;
 }
 
-gboolean g_at_chat_set_timeout_handlers(gboolean (*timeout_cb)(gpointer),
-			guint (*get_timeout_func)(const char *cmd))
-{
-	at_modem_command_timeout_cb = timeout_cb;
-	at_modem_get_timeout_func = get_timeout_func;
-
-	return TRUE;
-}
-
 static gboolean at_chat_set_wakeup_command(struct at_chat *chat,
 						const char *cmd,
 						unsigned int timeout,
@@ -1101,9 +1038,6 @@ static guint at_chat_send_common(struct at_chat *chat, guint gid,
 		return 0;
 
 	c->id = chat->next_cmd_id++;
-#ifdef AT_COMMAND_DEBUG
-	DBG("c->id=%d", c->id);
-#endif
 
 	g_queue_push_tail(chat->command_queue, c);
 
@@ -1137,8 +1071,7 @@ static struct at_notify *at_notify_create(struct at_chat *chat,
 	return notify;
 }
 
-static gboolean at_chat_cancel(struct at_chat *chat, guint group, guint id,
-				gboolean polling)
+static gboolean at_chat_cancel(struct at_chat *chat, guint group, guint id)
 {
 	GList *l;
 	struct at_command *c;
@@ -1157,18 +1090,13 @@ static gboolean at_chat_cancel(struct at_chat *chat, guint group, guint id,
 	if (c->gid != group)
 		return FALSE;
 
-	if (polling == FALSE &&
-			c == g_queue_peek_head(chat->command_queue) &&
-			c->bytes_written > 0) {
+	if (c == g_queue_peek_head(chat->command_queue) &&
+			chat->cmd_bytes_written > 0) {
 		/* We can't actually remove it since it is most likely
 		 * already in progress, just null out the callback
 		 * so it won't be called
 		 */
 		c->callback = NULL;
-		if (c->timeout_source) {
-			g_source_remove(c->timeout_source);
-			c->timeout_source = 0;
-		}
 	} else {
 		at_command_destroy(c);
 		g_queue_remove(chat->command_queue, c);
@@ -1177,8 +1105,7 @@ static gboolean at_chat_cancel(struct at_chat *chat, guint group, guint id,
 	return TRUE;
 }
 
-static gboolean at_chat_cancel_group(struct at_chat *chat, guint group,
-					gboolean polling)
+static gboolean at_chat_cancel_group(struct at_chat *chat, guint group)
 {
 	int n = 0;
 	struct at_command *c;
@@ -1192,7 +1119,7 @@ static gboolean at_chat_cancel_group(struct at_chat *chat, guint group,
 			continue;
 		}
 
-		if (polling == FALSE && n == 0 && c->bytes_written > 0) {
+		if (n == 0 && chat->cmd_bytes_written > 0) {
 			c->callback = NULL;
 			n += 1;
 			continue;
@@ -1203,6 +1130,29 @@ static gboolean at_chat_cancel_group(struct at_chat *chat, guint group,
 	}
 
 	return TRUE;
+}
+
+static gpointer at_chat_get_userdata(struct at_chat *chat,
+						guint group, guint id)
+{
+	GList *l;
+	struct at_command *c;
+
+	if (chat->command_queue == NULL)
+		return NULL;
+
+	l = g_queue_find_custom(chat->command_queue, GUINT_TO_POINTER(id),
+				at_command_compare_by_id);
+
+	if (l == NULL)
+		return NULL;
+
+	c = l->data;
+
+	if (c->gid != group)
+		return NULL;
+
+	return c->user_data;
 }
 
 static guint at_chat_register(struct at_chat *chat, guint group,
@@ -1491,7 +1441,7 @@ void g_at_chat_unref(GAtChat *chat)
 	if (chat->slave != NULL)
 		g_at_chat_unref(chat->slave);
 
-	at_chat_cancel_group(chat->parent, chat->group, FALSE);
+	at_chat_cancel_group(chat->parent, chat->group);
 	g_at_chat_unregister_all(chat);
 	at_chat_unref(chat->parent);
 
@@ -1593,21 +1543,29 @@ guint g_at_chat_send_and_expect_short_prompt(GAtChat *chat, const char *cmd,
 					NULL, func, user_data, notify);
 }
 
-gboolean g_at_chat_cancel(GAtChat *chat, guint id, gboolean polling)
+gboolean g_at_chat_cancel(GAtChat *chat, guint id)
 {
 	/* We use id 0 for wakeup commands */
 	if (chat == NULL || id == 0)
 		return FALSE;
 
-	return at_chat_cancel(chat->parent, chat->group, id, polling);
+	return at_chat_cancel(chat->parent, chat->group, id);
 }
 
-gboolean g_at_chat_cancel_all(GAtChat *chat, gboolean polling)
+gboolean g_at_chat_cancel_all(GAtChat *chat)
 {
 	if (chat == NULL)
 		return FALSE;
 
-	return at_chat_cancel_group(chat->parent, chat->group, polling);
+	return at_chat_cancel_group(chat->parent, chat->group);
+}
+
+gpointer g_at_chat_get_userdata(GAtChat *chat, guint id)
+{
+	if (chat == NULL)
+		return NULL;
+
+	return at_chat_get_userdata(chat->parent, chat->group, id);
 }
 
 guint g_at_chat_register(GAtChat *chat, const char *prefix,

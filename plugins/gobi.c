@@ -23,6 +23,7 @@
 #include <config.h>
 #endif
 
+#define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -33,6 +34,7 @@
 #include <ofono/modem.h>
 #include <ofono/devinfo.h>
 #include <ofono/netreg.h>
+#include <ofono/netmon.h>
 #include <ofono/phonebook.h>
 #include <ofono/voicecall.h>
 #include <ofono/sim.h>
@@ -41,12 +43,15 @@
 #include <ofono/ussd.h>
 #include <ofono/gprs.h>
 #include <ofono/gprs-context.h>
+#include <ofono/lte.h>
 #include <ofono/radio-settings.h>
 #include <ofono/location-reporting.h>
 #include <ofono/log.h>
+#include <ofono/message-waiting.h>
 
 #include <drivers/qmimodem/qmi.h>
 #include <drivers/qmimodem/dms.h>
+#include <drivers/qmimodem/wda.h>
 #include <drivers/qmimodem/util.h>
 
 #define GOBI_DMS	(1 << 0)
@@ -59,6 +64,7 @@
 #define GOBI_CAT	(1 << 7)
 #define GOBI_CAT_OLD	(1 << 8)
 #define GOBI_VOICE	(1 << 9)
+#define GOBI_WDA	(1 << 10)
 
 struct gobi_data {
 	struct qmi_device *device;
@@ -167,6 +173,16 @@ static void get_oper_mode_cb(struct qmi_result *result, void *user_data)
 
 	data->oper_mode = mode;
 
+	/*
+	 * Telit QMI LTE modem must remain online. If powered down, it also
+	 * powers down the sim card, and QMI interface has no way to bring
+	 * it back alive.
+	 */
+	if (ofono_modem_get_boolean(modem, "AlwaysOnline")) {
+		ofono_modem_set_powered(modem, TRUE);
+		return;
+	}
+
 	switch (data->oper_mode) {
 	case QMI_DMS_OPER_MODE_ONLINE:
 		param = qmi_param_new_uint8(QMI_DMS_PARAM_OPER_MODE,
@@ -239,52 +255,47 @@ error:
 	shutdown_device(modem);
 }
 
-static void discover_cb(uint8_t count, const struct qmi_version *list,
-							void *user_data)
+static void create_shared_dms(void *user_data)
 {
 	struct ofono_modem *modem = user_data;
 	struct gobi_data *data = ofono_modem_get_data(modem);
-	uint8_t i;
+
+	qmi_service_create_shared(data->device, QMI_SERVICE_DMS,
+				  create_dms_cb, modem, NULL);
+}
+
+static void discover_cb(void *user_data)
+{
+	struct ofono_modem *modem = user_data;
+	struct gobi_data *data = ofono_modem_get_data(modem);
+	uint16_t major, minor;
 
 	DBG("");
 
-	for (i = 0; i < count; i++) {
-		DBG("%s %d.%d", list[i].name, list[i].major, list[i].minor);
-
-		switch (list[i].type) {
-		case QMI_SERVICE_DMS:
-			data->features |= GOBI_DMS;
-			break;
-		case QMI_SERVICE_NAS:
-			data->features |= GOBI_NAS;
-			break;
-		case QMI_SERVICE_WMS:
-			data->features |= GOBI_WMS;
-			break;
-		case QMI_SERVICE_WDS:
-			data->features |= GOBI_WDS;
-			break;
-		case QMI_SERVICE_PDS:
-			data->features |= GOBI_PDS;
-			break;
-		case QMI_SERVICE_PBM:
-			data->features |= GOBI_PBM;
-			break;
-		case QMI_SERVICE_UIM:
-			data->features |= GOBI_UIM;
-			break;
-		case QMI_SERVICE_CAT:
-			data->features |= GOBI_CAT;
-			break;
-		case QMI_SERVICE_CAT_OLD:
-			if (list[i].major > 0)
-				data->features |= GOBI_CAT_OLD;
-			break;
-		case QMI_SERVICE_VOICE:
+	if (qmi_device_has_service(data->device, QMI_SERVICE_DMS))
+		data->features |= GOBI_DMS;
+	if (qmi_device_has_service(data->device, QMI_SERVICE_NAS))
+		data->features |= GOBI_NAS;
+	if (qmi_device_has_service(data->device, QMI_SERVICE_WMS))
+		data->features |= GOBI_WMS;
+	if (qmi_device_has_service(data->device, QMI_SERVICE_WDS))
+		data->features |= GOBI_WDS;
+	if (qmi_device_has_service(data->device, QMI_SERVICE_WDA))
+		data->features |= GOBI_WDA;
+	if (qmi_device_has_service(data->device, QMI_SERVICE_PDS))
+		data->features |= GOBI_PDS;
+	if (qmi_device_has_service(data->device, QMI_SERVICE_PBM))
+		data->features |= GOBI_PBM;
+	if (qmi_device_has_service(data->device, QMI_SERVICE_UIM))
+		data->features |= GOBI_UIM;
+	if (qmi_device_has_service(data->device, QMI_SERVICE_CAT))
+		data->features |= GOBI_CAT;
+	if (qmi_device_get_service_version(data->device,
+				QMI_SERVICE_CAT_OLD, &major, &minor))
+		if (major > 0)
+			data->features |= GOBI_CAT_OLD;
+	if (qmi_device_has_service(data->device, QMI_SERVICE_VOICE))
 			data->features |= GOBI_VOICE;
-			break;
-		}
-	}
 
 	if (!(data->features & GOBI_DMS)) {
 		if (++data->discover_attempts < 3) {
@@ -297,8 +308,10 @@ static void discover_cb(uint8_t count, const struct qmi_version *list,
 		return;
 	}
 
-	qmi_service_create_shared(data->device, QMI_SERVICE_DMS,
-						create_dms_cb, modem, NULL);
+	if (qmi_device_is_sync_supported(data->device))
+		qmi_device_sync(data->device, create_shared_dms, modem);
+	else
+		create_shared_dms(modem);
 }
 
 static int gobi_enable(struct ofono_modem *modem)
@@ -352,6 +365,14 @@ static int gobi_disable(struct ofono_modem *modem)
 	qmi_service_cancel_all(data->dms);
 	qmi_service_unregister_all(data->dms);
 
+	/*
+	 * Telit QMI modem must remain online. If powered down, it also
+	 * powers down the sim card, and QMI interface has no way to bring
+	 * it back alive.
+	 */
+	if (ofono_modem_get_boolean(modem, "AlwaysOnline"))
+		goto out;
+
 	param = qmi_param_new_uint8(QMI_DMS_PARAM_OPER_MODE,
 					QMI_DMS_OPER_MODE_PERSIST_LOW_POWER);
 	if (!param)
@@ -361,6 +382,7 @@ static int gobi_disable(struct ofono_modem *modem)
 					power_disable_cb, modem, NULL) > 0)
 		return -EINPROGRESS;
 
+out:
 	shutdown_device(modem);
 
 	return -EINPROGRESS;
@@ -413,15 +435,22 @@ error:
 static void gobi_pre_sim(struct ofono_modem *modem)
 {
 	struct gobi_data *data = ofono_modem_get_data(modem);
+	const char *sim_driver = NULL;
 
 	DBG("%p", modem);
 
 	ofono_devinfo_create(modem, 0, "qmimodem", data->device);
 
 	if (data->features & GOBI_UIM)
-		ofono_sim_create(modem, 0, "qmimodem", data->device);
+		sim_driver = "qmimodem";
 	else if (data->features & GOBI_DMS)
-		ofono_sim_create(modem, 0, "qmimodem-legacy", data->device);
+		sim_driver = "qmimodem-legacy";
+
+	if (ofono_modem_get_boolean(modem, "ForceSimLegacy"))
+		sim_driver = "qmimodem-legacy";
+
+	if (sim_driver)
+		ofono_sim_create(modem, 0, sim_driver, data->device);
 
 	if (data->features & GOBI_VOICE)
 		ofono_voicecall_create(modem, 0, "qmimodem", data->device);
@@ -437,6 +466,8 @@ static void gobi_post_sim(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
+	ofono_lte_create(modem, 0, "qmimodem", data->device);
+
 	if (data->features & GOBI_CAT)
 		ofono_stk_create(modem, 0, "qmimodem", data->device);
 	else if (data->features & GOBI_CAT_OLD)
@@ -450,6 +481,15 @@ static void gobi_post_sim(struct ofono_modem *modem)
 
 	if (data->features & GOBI_WMS)
 		ofono_sms_create(modem, 0, "qmimodem", data->device);
+
+	if ((data->features & GOBI_WMS) && (data->features & GOBI_UIM) &&
+			!ofono_modem_get_boolean(modem, "ForceSimLegacy")) {
+		struct ofono_message_waiting *mw =
+					ofono_message_waiting_create(modem);
+
+		if (mw)
+			ofono_message_waiting_register(mw);
+	}
 }
 
 static void gobi_post_online(struct ofono_modem *modem)
@@ -460,8 +500,10 @@ static void gobi_post_online(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	if (data->features & GOBI_NAS)
+	if (data->features & GOBI_NAS) {
 		ofono_netreg_create(modem, 0, "qmimodem", data->device);
+		ofono_netmon_create(modem, 0, "qmimodem", data->device);
+	}
 
 	if (data->features & GOBI_VOICE)
 		ofono_ussd_create(modem, 0, "qmimodem", data->device);

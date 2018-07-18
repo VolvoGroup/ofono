@@ -127,6 +127,7 @@ static void set_power_by_mce_state(struct ofono_modem *modem,
 	case MCE_NORMAL:
 		if (isi->online_cbd)
 			report_online(isi, mce_state == MCE_NORMAL);
+		/* fall through */
 	default:
 		report_powered(modem, isi, TRUE);
 	}
@@ -232,7 +233,7 @@ static void reachable_cb(const GIsiMessage *msg, void *data)
 	struct ofono_modem *om = data;
 	struct isi_data *isi = ofono_modem_get_data(om);
 
-	if (!g_isi_msg_error(msg) < 0)
+	if (g_isi_msg_error(msg) < 0)
 		return;
 
 	ISI_RESOURCE_DBG(msg);
