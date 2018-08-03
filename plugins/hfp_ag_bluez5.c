@@ -445,16 +445,21 @@ static void modem_watch(struct ofono_modem *modem, gboolean added, void *user)
 {
 	DBG("modem: %p, added: %d", modem, added);
 
-	if (added == FALSE)
-		return;
+	static unsigned int sim_watch_id=0, voice_watch_id=0;
 
-	__ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_SIM,
+  if (added) {
+	sim_watch_id = __ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_SIM,
 					sim_watch, modem, NULL);
-	__ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_VOICECALL,
+	voice_watch_id = __ofono_modem_add_atom_watch(modem, OFONO_ATOM_TYPE_VOICECALL,
 					voicecall_watch, modem, NULL);
+  } else {
+  	__ofono_modem_remove_atom_watch(modem, voice_watch_id);
+		__ofono_modem_remove_atom_watch(modem, sim_watch_id);
+  }
+
 }
 
-static void call_modemwatch(struct ofono_modem *modem, void *user)
+static void call_modemwatch_init(struct ofono_modem *modem, void *user)
 {
 	modem_watch(modem, TRUE, user);
 }
@@ -487,7 +492,7 @@ static int hfp_ag_init(void)
 	sim_hash = g_hash_table_new(g_direct_hash, g_direct_equal);
 
 	modemwatch_id = __ofono_modemwatch_add(modem_watch, NULL, NULL);
-	__ofono_modem_foreach(call_modemwatch, NULL);
+	__ofono_modem_foreach(call_modemwatch_init, NULL);
 
 	connection_hash = g_hash_table_new_full(g_str_hash, g_str_equal,
 					g_free, connection_destroy);
@@ -497,9 +502,16 @@ static int hfp_ag_init(void)
 	return 0;
 }
 
+static void call_modemwatch_exit(struct ofono_modem *modem, void *user)
+{
+	modem_watch(modem, FALSE, user);
+}
+
 static void hfp_ag_exit(void)
 {
 	DBusConnection *conn = ofono_dbus_get_connection();
+
+	__ofono_modem_foreach(call_modemwatch_exit, NULL);
 
 	__ofono_modemwatch_remove(modemwatch_id);
 	g_dbus_unregister_interface(conn, HFP_AG_EXT_PROFILE_PATH,
