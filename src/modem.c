@@ -2182,10 +2182,6 @@ static void modem_unregister(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	if (modem->powered == TRUE && modem->driver &&
-		modem->driver->powersave)
-		modem->driver->powersave(modem, TRUE);
-
 	if (modem->atoms)
 		flush_atoms(modem, MODEM_STATE_POWER_OFF);
 
