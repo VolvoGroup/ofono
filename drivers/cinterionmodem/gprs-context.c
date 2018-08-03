@@ -25,6 +25,7 @@ enum state {
   STATE_SET_APN,
   STATE_DEACTIVATING,
   STATE_ACTIVE,
+  STATE_QUERY_ATTACH
 };
 
 static const char *cgcontrdp_prefix[] = { "+CGCONTRDP:", NULL };
@@ -150,6 +151,8 @@ dynamic_ip:
 static void cint_gprs_detach(struct ofono_gprs_context *gc,
           unsigned int cid)
 {
+  DBG("cid %u", cid);
+
   struct cint_gprs_context_data * gcd = ofono_gprs_context_get_data(gc);
   char buf[32];
 
@@ -206,7 +209,7 @@ static gboolean cint_swwan_query(gpointer user_data)
 
   if (gcd->state == STATE_ACTIVE) {
     g_at_chat_send(gcd->chat, "AT^SWWAN?", none_prefix, NULL, NULL, NULL);
-    gcd->state = STATE_IDLE;
+    gcd->state = STATE_QUERY_ATTACH;
   }
   else {
     cint_gprs_detach(gc, gcd->active_context);
@@ -309,21 +312,18 @@ static void cinterion_context_deact_cb(gboolean ok, GAtResult *result,
 
   DBG("ok %d", ok);
 
+  gcd->active_context = 0;
+  gcd->state = STATE_IDLE;
+
   if (!ok) {
     struct ofono_error error;
 
     ofono_info("Error while deactivating data connection");
 
-    gcd->active_context = 0;
-    gcd->state = STATE_IDLE;
-
     cint_util_decode_at_error(&error, g_at_result_final_response(result));
     gcd->cb(&error, gcd->cb_data);
     return;
   }
-
-  gcd->active_context = 0;
-  gcd->state = STATE_IDLE;
 
   CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
 }
@@ -470,6 +470,9 @@ static void cint_gprs_deactivate_primary(struct ofono_gprs_context *gc,
     return;
   }
 
+  /* Signal on Dbus that the context is deactivated */
+  ofono_gprs_context_deactivated(gc, cid);
+
   CALLBACK_WITH_FAILURE(cb, data);
 }
 
@@ -477,21 +480,9 @@ static void cint_gprs_detach_shutdown(struct ofono_gprs_context *gc,
           unsigned int cid)
 
 {
-  struct cint_gprs_context_data * gcd = NULL;
-  char buf[32];
-
   DBG("cid %u", cid);
 
-  gcd = ofono_gprs_context_get_data(gc);
-
-  if (gcd->modem == CINTERION_LTE) {
-    snprintf(buf, sizeof(buf) - 1, "AT^SWWAN=0,%u", cid);
-  }
-  else {
-    snprintf(buf, sizeof(buf) - 1, "AT+CGACT=0,%u", cid);
-  }
-
-  g_at_chat_send(gcd->chat, buf, none_prefix, NULL, NULL, NULL);
+  cint_gprs_detach(gc, cid);
 }
 
 static struct ofono_gprs_context_driver driver = {
