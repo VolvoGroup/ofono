@@ -3,6 +3,7 @@
  *  oFono - Open Source Telephony
  *
  *  Copyright (C) 2008-2011  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2018 Gemalto M2M
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -185,3 +186,4 @@ const char *packet_bearer_to_string(int bearer);
 
 gboolean is_valid_apn(const char *apn);
 const char *call_status_to_string(enum call_status status);
+int get_auth_type_from_str(const char *auth_type);

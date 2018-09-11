@@ -3,6 +3,7 @@
  *  oFono - Open Source Telephony
  *
  *  Copyright (C) 2016  Endocode AG. All rights reserved.
+ *  Copyright (C) 2018 Gemalto M2M
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -27,14 +28,24 @@ extern "C" {
 #endif
 
 #include <ofono/types.h>
+#include <gdbus.h>
 
-struct ofono_lte;
+enum ofono_lte_auth_method {
+	OFONO_LTE_AUTH_METHOD_NONE,
+	OFONO_LTE_AUTH_METHOD_PAP,
+	OFONO_LTE_AUTH_METHOD_CHAP,
+};
 
 struct ofono_lte_default_attach_info {
 	char apn[OFONO_GPRS_MAX_APN_LENGTH + 1];
+	enum ofono_lte_auth_method auth_type;
+	char username[OFONO_GPRS_MAX_USERNAME_LENGTH + 1];
+	char password[OFONO_GPRS_MAX_PASSWORD_LENGTH + 1];
 };
 
 typedef void (*ofono_lte_cb_t)(const struct ofono_error *error, void *data);
+
+struct ofono_lte;
 
 struct ofono_lte_driver {
 	const char *name;
