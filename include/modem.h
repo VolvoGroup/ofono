@@ -26,6 +26,8 @@
 extern "C" {
 #endif
 
+#include <glib.h>
+
 #include <ofono/types.h>
 
 struct ofono_modem;
@@ -75,6 +77,21 @@ struct ofono_modem_driver {
 
 	/* Populate the atoms available online */
 	void (*post_online)(struct ofono_modem *modem);
+
+	/* Enable/disable power-save mode */
+	void (*powersave)(struct ofono_modem *modem, ofono_bool_t enable);
+
+	/* Softly reset the modem using an AT command */
+	void (*modem_reset)(struct ofono_modem *modem);
+
+	/* Power the modem off completely using an AT command */
+	void (*modem_shutdown)(struct ofono_modem *modem);
+
+	/* Dumps crashlogs from the modem using an AT command, GSourceFunc is
+	 * called when the dump finishes
+	 */
+	void (*dump_crashlogs)(struct ofono_modem *modem, int fd,
+							GSourceFunc cb);
 };
 
 void ofono_modem_add_interface(struct ofono_modem *modem,
@@ -97,6 +114,8 @@ ofono_bool_t ofono_modem_is_registered(struct ofono_modem *modem);
 void ofono_modem_remove(struct ofono_modem *modem);
 
 void ofono_modem_reset(struct ofono_modem *modem);
+
+void ofono_modem_set_powersave(struct ofono_modem *modem, ofono_bool_t powersave);
 
 void ofono_modem_set_powered(struct ofono_modem *modem, ofono_bool_t powered);
 ofono_bool_t ofono_modem_get_powered(struct ofono_modem *modem);

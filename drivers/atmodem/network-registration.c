@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2008-2011  Intel Corporation. All rights reserved.
  *  Copyright (C) 2010  ST-Ericsson AB.
+ *  Copyright (C) 2018 Gemalto M2M
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -56,6 +57,7 @@ struct netreg_data {
 	GAtChat *chat;
 	char mcc[OFONO_MAX_MCC_LENGTH + 1];
 	char mnc[OFONO_MAX_MNC_LENGTH + 1];
+	unsigned int csq_source;
 	int signal_index; /* If strength is reported via CIND */
 	int signal_min; /* min strength reported via CIND */
 	int signal_max; /* max strength reported via CIND */
@@ -179,7 +181,7 @@ static int option_parse_tech(GAtResult *result)
 	return tech;
 }
 
-static int cinterion_parse_tech(GAtResult *result)
+static int gemalto_parse_tech(GAtResult *result)
 {
 	int tech = -1;
 	GAtResultIter iter;
@@ -231,13 +233,13 @@ static void at_creg_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	cb(&error, status, lac, ci, tech, cbd->data);
 }
 
-static void cinterion_query_tech_cb(gboolean ok, GAtResult *result,
+static void gemalto_query_tech_cb(gboolean ok, GAtResult *result,
                                               gpointer user_data)
 {
 	struct tech_query *tq = user_data;
 	int tech;
 
-	tech = cinterion_parse_tech(result);
+	tech = gemalto_parse_tech(result);
 
 	ofono_netreg_status_notify(tq->netreg,
 			tq->status, tq->lac, tq->ci, tech);
@@ -664,6 +666,45 @@ static void csq_notify(GAtResult *result, gpointer user_data)
 				at_util_convert_signal_strength(strength));
 }
 
+static void cesq_notify(GAtResult *result, gpointer user_data)
+{
+	struct ofono_netreg *netreg = user_data;
+	int strength_GSM, strength_UTRAN, strength_EUTRAN;
+	GAtResultIter iter;
+
+	g_at_result_iter_init(&iter, result);
+
+	if (!g_at_result_iter_next(&iter, "+CESQ:"))
+		return;
+
+	/* rxlevel gsm, use as a strength indicator */
+	if (!g_at_result_iter_next_number(&iter, &strength_GSM))
+		return;
+
+	/* ber gsm, ignore*/
+	if (!g_at_result_iter_skip_next(&iter))
+		return;
+
+	/* rscp utran, use as a strength indicator */
+	if (!g_at_result_iter_next_number(&iter, &strength_UTRAN))
+		return;
+
+	/* ecno utran, ignore */
+	if (!g_at_result_iter_skip_next(&iter))
+		return;
+
+	/* rsrq eutran, ignore */
+	if (!g_at_result_iter_skip_next(&iter))
+		return;
+
+	/* rsrp eutran, use as a strength indicator */
+	if (!g_at_result_iter_next_number(&iter, &strength_EUTRAN))
+		return;
+
+	ofono_netreg_strength_notify(netreg,
+				at_util_convert_signal_strength_cesq(strength_GSM, strength_UTRAN, strength_EUTRAN));
+}
+
 static void calypso_csq_notify(GAtResult *result, gpointer user_data)
 {
 	struct ofono_netreg *netreg = user_data;
@@ -876,7 +917,7 @@ static void telit_ciev_notify(GAtResult *result, gpointer user_data)
 	ofono_netreg_strength_notify(netreg, strength);
 }
 
-static void cinterion_ciev_notify(GAtResult *result, gpointer user_data)
+static void gemalto_ciev_notify(GAtResult *result, gpointer user_data)
 {
 	struct ofono_netreg *netreg = user_data;
 	struct netreg_data *nd = ofono_netreg_get_data(netreg);
@@ -1233,18 +1274,23 @@ static void at_signal_strength(struct ofono_netreg *netreg,
 
 	cbd->user = nd;
 
-	/*
-	 * If we defaulted to using CIND, then keep using it,
-	 * otherwise fall back to CSQ
-	 */
-	if (nd->signal_index > 0) {
-		if (g_at_chat_send(nd->chat, "AT+CIND?", cind_prefix,
-					cind_cb, cbd, g_free) > 0)
-			return;
-	} else {
-		if (g_at_chat_send(nd->chat, "AT+CSQ", csq_prefix,
-				csq_cb, cbd, g_free) > 0)
-			return;
+	switch(nd->vendor) {
+	case OFONO_VENDOR_GEMALTO:
+		break;
+	default:
+		/*
+		 * If we defaulted to using CIND, then keep using it,
+		 * otherwise fall back to CSQ
+		 */
+		if (nd->signal_index > 0) {
+			if (g_at_chat_send(nd->chat, "AT+CIND?", cind_prefix,
+						cind_cb, cbd, g_free) > 0)
+				return;
+		} else {
+			if (g_at_chat_send(nd->chat, "AT+CSQ", csq_prefix,
+					csq_cb, cbd, g_free) > 0)
+				return;
+		}
 	}
 
 	g_free(cbd);
@@ -1534,6 +1580,9 @@ static void creg_notify(GAtResult *result, gpointer user_data)
 	tq->ci = ci;
 	tq->netreg = netreg;
 
+	if ((status == 1 || status == 5) && tech == -1)
+		tech = nd->tech;
+
 	switch (nd->vendor) {
 	case OFONO_VENDOR_GOBI:
 		if (g_at_chat_send(nd->chat, "AT*CNTI=0", none_prefix,
@@ -1556,18 +1605,17 @@ static void creg_notify(GAtResult *result, gpointer user_data)
 					option_query_tech_cb, tq, g_free) > 0)
 			return;
 		break;
-    case OFONO_VENDOR_CINTERION:
-              if (g_at_chat_send(nd->chat, "AT^SMONI",
-                                      smoni_prefix,
-                                      cinterion_query_tech_cb, tq, g_free) > 0)
-                      return;
-              break;
+    case OFONO_VENDOR_GEMALTO:
+		if (tech!=-1)
+			break;  /* technology already returned by +CREG, so run the notify label */
+		if (g_at_chat_send(nd->chat, "AT^SMONI",
+					smoni_prefix,
+					gemalto_query_tech_cb, tq, g_free) > 0)
+			return;
+		break;
 	}
 
 	g_free(tq);
-
-	if ((status == 1 || status == 5) && tech == -1)
-		tech = nd->tech;
 
 notify:
 	ofono_netreg_status_notify(netreg, status, lac, ci, tech);
@@ -1861,6 +1909,17 @@ error:
 	ofono_netreg_remove(netreg);
 }
 
+static gboolean gemalto_csq_query(gpointer user_data)
+{
+	struct ofono_netreg *netreg = user_data;
+	struct netreg_data *nd = ofono_netreg_get_data(netreg);
+
+	g_at_chat_send(nd->chat, "AT+CSQ", none_prefix, NULL, NULL, NULL);
+	g_at_chat_send(nd->chat, "AT+CESQ", none_prefix, NULL, NULL, NULL);
+
+	return TRUE;
+}
+
 static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct ofono_netreg *netreg = user_data;
@@ -2028,12 +2087,12 @@ static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		g_at_chat_send(nd->chat, "AT*TLTS=1", none_prefix,
 						NULL, NULL, NULL);
 		break;
-	case OFONO_VENDOR_CINTERION:
+	case OFONO_VENDOR_GEMALTO:
 		/*
-		 * We can't set rssi bounds from Cinterion responses
+		 * We can't set rssi bounds from Gemalto responses
 		 * so set them up to specified values here
 		 *
-		 * Cinterion rssi signal strength specified as:
+		 * Gemalto rssi signal strength specified as:
 		 * 0      <= -112dBm
 		 * 1 - 4  signal strengh in 15 dB steps
 		 * 5      >= -51 dBm
@@ -2042,12 +2101,21 @@ static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		nd->signal_min = 0;
 		nd->signal_max = 5;
 		nd->signal_invalid = 99;
-
 		/* Register for specific signal strength reports */
+		g_at_chat_register(nd->chat, "+CIEV:",
+				gemalto_ciev_notify, FALSE, netreg, NULL);
 		g_at_chat_send(nd->chat, "AT^SIND=\"rssi\",1", none_prefix,
 				NULL, NULL, NULL);
-		g_at_chat_register(nd->chat, "+CIEV:",
-				cinterion_ciev_notify, FALSE, netreg, NULL);
+		/* Register for +CSQ and +CESQ and then poll them periodically */
+		g_at_chat_register(nd->chat, "+CSQ:", csq_notify,
+						FALSE, netreg, NULL);
+		g_at_chat_register(nd->chat, "+CESQ:", cesq_notify,
+						FALSE, netreg, NULL);
+
+		if (!nd->csq_source) /* just in case it has already be called, to avoid a memory leak */
+			//nd->csq_source = g_timeout_add_seconds(10, gemalto_csq_query, netreg);
+			nd->csq_source = g_timeout_add_seconds(120, gemalto_csq_query, netreg);
+
 		break;
 	case OFONO_VENDOR_NOKIA:
 	case OFONO_VENDOR_SAMSUNG:
@@ -2144,6 +2212,9 @@ static void at_netreg_remove(struct ofono_netreg *netreg)
 
 	if (nd->nitz_timeout)
 		g_source_remove(nd->nitz_timeout);
+
+	if (nd->csq_source)
+		g_source_remove(nd->csq_source);
 
 	ofono_netreg_set_data(netreg, NULL);
 

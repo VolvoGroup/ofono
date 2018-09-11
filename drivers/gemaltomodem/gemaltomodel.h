@@ -2,7 +2,7 @@
  *
  *  oFono - Open Source Telephony
  *
- *  Copyright (C) 2017 Vincent Cesson. All rights reserved.
+ *  Copyright (C) 2018 Gemalto M2M. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -19,33 +19,9 @@
  *
  */
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
-
-#include <glib.h>
-#include <gatchat.h>
-
-#define OFONO_API_SUBJECT_TO_CHANGE
-#include <ofono/plugin.h>
-#include <ofono/types.h>
-
-#include "gemaltomodem.h"
-
-static int gemaltomodem_init(void)
-{
-	gemalto_location_reporting_init();
-	gemaltowwan_gprs_context_init();
-
-	return 0;
-}
-
-static void gemaltomodem_exit(void)
-{
-	gemalto_location_reporting_exit();
-	gemaltowwan_gprs_context_exit();
-}
-
-OFONO_PLUGIN_DEFINE(gemaltomodem, "Gemalto modem driver", VERSION,
-			OFONO_PLUGIN_PRIORITY_DEFAULT,
-			gemaltomodem_init, gemaltomodem_exit)
+enum gemalto_model {
+	GEMALTO_GENERIC = 0,
+	GEMALTO_SGAUTH,
+	GEMALTO_SWWAN_SGAUTH,
+	GEMALTO_SWWAN,
+};

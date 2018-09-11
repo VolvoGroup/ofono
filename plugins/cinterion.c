@@ -63,13 +63,6 @@ static void cinterion_remove(struct ofono_modem *modem)
 {
 }
 
-static void cinterion_debug(const char *str, void *user_data)
-{
-	const char *prefix = user_data;
-
-	ofono_info("%s%s", prefix, str);
-}
-
 static int cinterion_enable(struct ofono_modem *modem)
 {
 	GAtChat *chat;
@@ -81,10 +74,22 @@ static int cinterion_enable(struct ofono_modem *modem)
 	DBG("%p", modem);
 
 	options = g_hash_table_new(g_str_hash, g_str_equal);
+
+	if (options == NULL)
+	{
+		return -EIO;
+	}
+
 	if (options == NULL)
 		return -ENOMEM;
 
 	device = ofono_modem_get_string(modem, "Device");
+
+	if (device == NULL)
+	{
+		return -EIO;
+	}
+
 	if (device == NULL)
 		return -EINVAL;
 
@@ -101,7 +106,9 @@ static int cinterion_enable(struct ofono_modem *modem)
 	g_hash_table_destroy(options);
 
 	if (channel == NULL)
+	{
 		return -EIO;
+	}
 
 	/*
          * (Cinterion plugin is based on tc65 plugin. Comment left in but may
@@ -118,10 +125,12 @@ static int cinterion_enable(struct ofono_modem *modem)
 	g_io_channel_unref(channel);
 
 	if (chat == NULL)
-		return -ENOMEM;
+	{
+		return -EIO;
+	}
 
-	if (getenv("OFONO_AT_DEBUG"))
-		g_at_chat_set_debug(chat, cinterion_debug, "");
+	if (chat == NULL)
+		return -ENOMEM;
 
 	ofono_modem_set_data(modem, chat);
 
@@ -209,7 +218,7 @@ static void cinterion_post_online(struct ofono_modem *modem)
 	ofono_ussd_create(modem, 0, "atmodem", chat);
 	ofono_call_forwarding_create(modem, 0, "atmodem", chat);
 	ofono_call_settings_create(modem, 0, "atmodem", chat);
-	ofono_netreg_create(modem, OFONO_VENDOR_CINTERION, "atmodem", chat);
+	ofono_netreg_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", chat);
 	ofono_call_meter_create(modem, 0, "atmodem", chat);
 	ofono_call_barring_create(modem, 0, "atmodem", chat);
 
