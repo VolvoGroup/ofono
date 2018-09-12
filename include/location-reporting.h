@@ -52,6 +52,8 @@ struct ofono_location_reporting_driver {
 			ofono_location_reporting_enable_cb_t cb, void *data);
 	void (*disable)(struct ofono_location_reporting *lr,
 			ofono_location_reporting_disable_cb_t cb, void *data);
+	void (*get_properties)(struct ofono_location_reporting *lr, void *_dict);
+	void* (*set_property)(struct ofono_location_reporting *lr, void *_msg);
 };
 
 int ofono_location_reporting_driver_register(

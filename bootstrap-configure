@@ -11,7 +11,7 @@ fi
 		--mandir=/usr/share/man \
 		--sysconfdir=/etc \
 		--localstatedir=/var \
-		--enable-test \
-		--enable-tools \
-		--enable-dundee \
+		--enable-threads \
+		--enable-ell \
+		--enable-mbimmodem \
 		--disable-datafiles $*
