@@ -315,14 +315,6 @@ done:
 	return TRUE;
 }
 
-
-
-/* 
- * The port layout on this modem is customizable.
- * That means that the current port layout is just one of many possible.
- * The specification for which port that is which will need editing by hand
- * upon changes to the modem configuration.
- */
 static gboolean setup_huawei(struct modem_info *modem)
 {
 	const char *qmi = NULL, *mdm = NULL, *net = NULL;
@@ -1733,12 +1725,6 @@ static struct {
 	{ "samsung",	"option",	"04e8", "6889"	},
 	{ "samsung",	"kalmia"			},
 	{ "quectel",	"option",	"05c6", "9090"	},
-	{ "cinterionahx3",	"option",	"1e2d",	"0055"	},
-	{ "cinterionahx3",	"cdc_ether",	"1e2d",	"0055"	},
-	{ "cinterionLTE",	"cdc_acm",	"1e2d",	"0061"	},
-	{ "cinterionLTE",	"cdc_ether",	"1e2d",	"0061"	},
-	{ "cinterionLTE",	"cdc_acm",	"1e2d",	"0063"	},
-	{ "cinterionLTE",	"cdc_wdm",	"1e2d",	"0063"	},
 	{ "quectelqmi",	"qmi_wwan",	"2c7c", "0121"	},
 	{ "quectelqmi",	"qcserial",	"2c7c", "0121"	},
 	{ "quectelqmi",	"qmi_wwan",	"2c7c", "0125"	},
@@ -1766,7 +1752,6 @@ static void check_usb_device(struct udev_device *device)
 	const char *syspath, *devname, *driver;
 	const char *vendor = NULL, *model = NULL;
 
-	DBG("");
 	usb_device = udev_device_get_parent_with_subsystem_devtype(device,
 							"usb", "usb_device");
 
@@ -1777,13 +1762,12 @@ static void check_usb_device(struct udev_device *device)
 	if (syspath == NULL)
 		return;
 
-	DBG("syspath = %s", syspath);
-
 	devname = udev_device_get_devnode(usb_device);
 	if (devname == NULL)
 		return;
 
-	DBG("devname = %s", devname);
+	vendor = udev_device_get_property_value(usb_device, "ID_VENDOR_ID");
+	model = udev_device_get_property_value(usb_device, "ID_MODEL_ID");
 
 	/* for serial2usb-like devices, enum as usb/usb_device */
 	driver = udev_device_get_property_value(usb_device, "OFONO_DRIVER");
@@ -1833,25 +1817,19 @@ static void check_usb_device(struct udev_device *device)
 			return;
 
 		for (i = 0; vendor_list[i].driver; i++) {
-			DBG(">> %s [%s:%s] %s", vendor_list[i].vid ? vendor_list[i].drv : "---",
-					vendor_list[i].vid ? vendor_list[i].vid : "----",
-							vendor_list[i].pid ? vendor_list[i].pid : "----",
-									vendor_list[i].driver ? vendor_list[i].driver : "");
-
 			if (g_str_equal(vendor_list[i].drv, drv) == FALSE)
 				continue;
 
-			DBG("Match drv '%s'", drv ? drv : "");
 			if (vendor_list[i].vid) {
 				if (!g_str_equal(vendor_list[i].vid, vendor))
 					continue;
 			}
-DBG("Match vid '%s'", vendor ? vendor : "");
+
 			if (vendor_list[i].pid) {
 				if (!g_str_equal(vendor_list[i].pid, model))
 					continue;
 			}
-DBG("Match pid '%s'", model ? model : "");
+
 			driver = vendor_list[i].driver;
 		}
 
@@ -1907,7 +1885,6 @@ static gboolean create_modem(gpointer key, gpointer value, gpointer user_data)
 		return TRUE;
 
 	for (i = 0; driver_list[i].name; i++) {
-		DBG("Checking %s @ %p", driver_list[i].name, driver_list[i].setup);
 		if (g_str_equal(driver_list[i].name, modem->driver) == FALSE)
 			continue;
 
@@ -1950,8 +1927,6 @@ static void enumerate_devices(struct udev *context)
 		const char *syspath = udev_list_entry_get_name(entry);
 		struct udev_device *device;
 
-		DBG("enumerate_devices: found device %s", syspath);
-
 		device = udev_device_new_from_syspath(context, syspath);
 		if (device != NULL) {
 			check_device(device);
@@ -1989,7 +1964,7 @@ static gboolean udev_event(GIOChannel *channel, GIOCondition cond,
 	const char *action;
 
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
-		ofono_error("Error with udev monitor channel, cond=0x%X", cond);
+		ofono_warn("Error with udev monitor channel");
 		udev_watch = 0;
 		return FALSE;
 	}
@@ -2017,7 +1992,7 @@ static gboolean udev_event(GIOChannel *channel, GIOCondition cond,
 	return TRUE;
 }
 
-static int udev_start(void)
+static void udev_start(void)
 {
 	GIOChannel *channel;
 	int fd;
@@ -2026,7 +2001,7 @@ static int udev_start(void)
 
 	if (udev_monitor_enable_receiving(udev_mon) < 0) {
 		ofono_error("Failed to enable udev monitor");
-		return -EIO;
+		return;
 	}
 
 	enumerate_devices(udev_ctx);
@@ -2035,15 +2010,13 @@ static int udev_start(void)
 
 	channel = g_io_channel_unix_new(fd);
 	if (channel == NULL)
-		return -EIO;
+		return;
 
 	udev_watch = g_io_add_watch(channel,
 				G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL,
 							udev_event, NULL);
 
 	g_io_channel_unref(channel);
-
-	return 0;
 }
 
 static int detect_init(void)
@@ -2074,7 +2047,9 @@ static int detect_init(void)
 
 	udev_monitor_filter_update(udev_mon);
 
-	return udev_start();
+	udev_start();
+
+	return 0;
 }
 
 static void detect_exit(void)

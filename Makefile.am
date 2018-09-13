@@ -243,28 +243,9 @@ builtin_modules += gobi
 builtin_sources += plugins/gobi.c
 endif
 
-if CINTERIONMODEM
-builtin_modules += cinterionmodem
-builtin_sources += drivers/cinterionmodem/cinterionutil.h \
-			drivers/cinterionmodem/cinterionutil.c \
-			drivers/cinterionmodem/cinterionmodem.h \
-			drivers/cinterionmodem/cinterionmodem.c \
-			drivers/cinterionmodem/devinfo.c \
-			drivers/cinterionmodem/sim.c \
-			drivers/cinterionmodem/voicecall.c \
-			drivers/cinterionmodem/sms.c \
-			drivers/cinterionmodem/gprs.c \
-			drivers/cinterionmodem/gprs-context.c \
-			drivers/cinterionmodem/network-registration.c \
-			drivers/cinterionmodem/cbs.c
-
-builtin_modules += cinterion_lte
-builtin_sources += plugins/cinterion_lte.c
-endif
-
 if ATMODEM
 builtin_modules += atmodem
-builtin_sources += drivers/atmodem/atmodem.h \
+builtin_sources += 	drivers/atmodem/atmodem.h \
 			drivers/atmodem/atmodem.c \
 			drivers/atmodem/call-settings.c \
 			drivers/atmodem/sms.c \
