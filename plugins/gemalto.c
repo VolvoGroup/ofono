@@ -2285,58 +2285,77 @@ static int gemalto_disable(struct ofono_modem *modem)
 	return -EINPROGRESS;
 }
 
+static void powersave_stored_exec(struct ofono_modem *modem, ofono_bool_t enable)
+{
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	const char *vid = gemalto_get_string(modem, "Vendor");
+	const char *pid = gemalto_get_string(modem, "Model");
+	char store[32];
+	int index;
+	char *command, *prompt, *argument;
+	char key[32];
+	GKeyFile *f;
+
+	if(enable)
+		sprintf(store,"%s-%s/power_mode_powersave", vid, pid);
+	else
+		sprintf(store,"%s-%s/power_mode_normal", vid, pid);
+
+	f = storage_open(NULL, store);
+
+	if (!f)
+		return;
+
+	for (index=0;;index++) {
+		sprintf(key, "command_%d", index);
+		command = g_key_file_get_string(f, "Simple", key, NULL);
+
+		if(!command)
+			break;
+
+		DBG(REDCOLOR"executing stored command simple: %s"NOCOLOR, command);
+		g_at_chat_send(data->app, command, NULL, NULL, NULL, NULL);
+	}
+
+	for (index=0;;index++) {
+		sprintf(key, "command_%d", index);
+		command = g_key_file_get_string(f, "WithPrompt", key, NULL);
+		sprintf(key, "prompt_%d", index);
+		prompt = g_key_file_get_string(f, "WithPrompt", key, NULL);
+		sprintf(key, "argument_%d", index);
+		argument = g_key_file_get_string(f, "WithPrompt", key, NULL);
+
+		if(!command || !prompt || !argument)
+			break;
+
+		DBG("executing stored command with prompt: %s", command);
+		executeWithPrompt(data->app, command, prompt, argument,
+			NULL, NULL, NULL);
+	}
+
+	storage_close(NULL, store, f, FALSE);
+}
+
 static void gemalto_powersave_cb(gboolean ok, GAtResult *result,
 				gpointer user_data)
 {
-	struct ofono_modem *modem = user_data;
-	ofono_modem_set_powersave(modem, TRUE);
-
-	return;
-}
-
-static void gemalto_normal_cb(gboolean ok, GAtResult *result,
-				gpointer user_data)
-{
-	struct ofono_modem *modem = user_data;
-	ofono_modem_set_powersave(modem, FALSE);
-
-	return;
+	struct cb_data *cbd = user_data;
+	struct ofono_modem *modem = cbd->data;
+	ofono_modem_set_powersave(modem, cbd->user!=NULL);
 }
 
 static void gemalto_powersave(struct ofono_modem *modem, ofono_bool_t enable)
 {
 	struct gemalto_data *data = ofono_modem_get_data(modem);
+	struct cb_data *cbd = cb_data_new(NULL, modem);
 
-	DBG("");
+	powersave_stored_exec(modem, enable);
 
-	if (!enable) {
-		g_at_chat_send(data->app, "AT+CREG=0", none_prefix,
-					NULL, NULL, NULL);	/* disable URC for network */
-		g_at_chat_send(data->app, "AT+CGREG=0", none_prefix,
-					NULL, NULL, NULL);	/* disable URC for GPRS */
-		g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"0\"", none_prefix,
-					NULL, NULL, NULL);	/* turn off GNSS */
-		g_at_chat_send(data->app, "AT^SGPSC=\"Power/Antenna\",\"off\"", none_prefix,
-				    NULL, NULL, NULL);  /* Power off GNSS-antenna */
+	if(enable)
+		cbd->user = modem; /* doesn't matter, just checked for !=NULL */
 
-		g_at_chat_send(data->app, "AT", none_prefix,
-					gemalto_powersave_cb, modem, NULL);
-	} else {
-		g_at_chat_send(data->app, "AT+CREG=2", none_prefix,
-					NULL, NULL, NULL);	/* enable URC for network */
-		g_at_chat_send(data->app, "AT+CGREG=2", none_prefix,
-					NULL, NULL, NULL);	/* enable URC for GPRS */
-		g_at_chat_send(data->app, "AT+CNMI=2,1", none_prefix,
-					NULL, NULL, NULL);	/* Make sure URC for SMS is enabled */
-		g_at_chat_send(data->app, "AT^SGPSC=\"Power/Antenna\",\"on\"", none_prefix,
-				    NULL, NULL, NULL);  /* Power on GNSS-antenna */
-		g_at_chat_send(data->app, "AT^SGPSC=\"Engine\",\"1\"", none_prefix,
-					NULL, NULL, NULL);	/* turn on GNSS */
-
-		g_at_chat_send(data->app, "AT", none_prefix,
-					gemalto_normal_cb, modem, NULL);
-
-	}
+	g_at_chat_send(data->app, "AT", none_prefix,
+					gemalto_powersave_cb, cbd, g_free);
 }
 
 static struct ofono_modem_driver gemalto_driver = {

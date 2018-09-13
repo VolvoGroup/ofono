@@ -105,7 +105,7 @@ static void gemalto_at_lte_set_default_auth_info(const struct ofono_lte *lte,
 
 	if (info->auth_type == OFONO_LTE_AUTH_METHOD_PAP) {
 		snprintf(buf+strlen(buf), buflen, "1,1,\"%s\",\"%s\"",
-						info->username, info->password);
+						info->password, info->username);
 
 		if(g_at_chat_send(ldd->chat, buf, NULL,
 			at_lte_set_default_auth_info_cb, lcbd, g_free) > 0) {
@@ -114,7 +114,7 @@ static void gemalto_at_lte_set_default_auth_info(const struct ofono_lte *lte,
 
 	} else if (info->auth_type == OFONO_LTE_AUTH_METHOD_CHAP) {
 		snprintf(buf+strlen(buf), buflen, "1,2,\"%s\",\"%s\"",
-						info->username, info->password);
+						info->password, info->username);
 
 		if(g_at_chat_send(ldd->chat, buf, NULL,
 			at_lte_set_default_auth_info_cb, lcbd, g_free) > 0) {
