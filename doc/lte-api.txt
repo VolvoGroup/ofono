@@ -25,11 +25,40 @@ Signals		PropertyChanged(string property, variant value)
 			This signal indicates a changed value of the given
 			property.
 
-Properties	string DefaultAccessPointName [readwrite]
+Properties	string AccessPointName [readwrite]
 
 			On LongTermEvolution, contexts activate automatically.
 			This property allows selection of an APN to be used on
 			next automatic activation.
+			By setting this property AT+CGDCONT is sent,
+			followed by AT+CGAUTH if needed.
 
 			Setting this property to an empty string clears the
 			default APN from the modem.
+
+		string AuthenticationMethod [readwrite]
+
+			Sets the Method used for the authentication
+			for the default APN.
+			The authentication information is sent to the module
+      when the AccessPointName property is set
+
+			Available values are "", "pap" and "chap".
+
+			"pap" and "chap" authentication methods require
+			both Username and Password set to nonempty values
+
+		string Username [readwrite]
+
+			Holds the username to be used for authentication
+			purposes.
+			The authentication information is sent to the module
+      when the AccessPointName property is set
+
+		string Password [readwrite]
+
+			Holds the password to be used for authentication
+			purposes.
+			The authentication information is sent to the module
+      when the AccessPointName property is set
+

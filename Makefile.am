@@ -416,6 +416,7 @@ builtin_modules += gemaltomodem
 builtin_sources += drivers/atmodem/atutil.h \
 			drivers/gemaltomodem/gemaltomodem.h \
 			drivers/gemaltomodem/gemaltomodem.c \
+			drivers/gemaltomodem/gprs-context-wwan.c \
 			drivers/gemaltomodem/location-reporting.c
 
 builtin_modules += xmm7modem
@@ -873,7 +874,6 @@ if MBIMMODEM
 unit_tests += unit/test-mbim
 endif
 endif
-
 
 if TEST
 noinst_PROGRAMS = $(unit_tests) \

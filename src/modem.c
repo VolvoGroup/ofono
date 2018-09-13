@@ -3,6 +3,7 @@
  *  oFono - Open Source Telephony
  *
  *  Copyright (C) 2008-2011  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2018 Gemalto M2M
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -193,6 +194,11 @@ struct ofono_sim *ofono_modem_get_sim(struct ofono_modem *modem)
 struct ofono_gprs *ofono_modem_get_gprs(struct ofono_modem *modem)
 {
 	return __ofono_atom_find(OFONO_ATOM_TYPE_GPRS, modem);
+}
+
+struct ofono_voicecall *ofono_modem_get_voicecall(struct ofono_modem *modem)
+{
+	return __ofono_atom_find(OFONO_ATOM_TYPE_VOICECALL, modem);
 }
 
 struct ofono_atom *__ofono_modem_add_atom(struct ofono_modem *modem,
@@ -417,8 +423,6 @@ static void flush_atoms(struct ofono_modem *modem, enum modem_state new_state)
 	GSList *cur;
 	GSList *prev;
 	GSList *tmp;
-
-	DBG("");
 
 	prev = NULL;
 	cur = modem->atoms;
@@ -1054,7 +1058,7 @@ static DBusMessage *set_property_lockdown(struct ofono_modem *modem,
 		}
 
 		modem->pending = dbus_message_ref(msg);
-		modem->timeout = g_timeout_add_seconds(20,
+		modem->timeout = g_timeout_add_seconds(60,
 						set_powered_timeout, modem);
 		return NULL;
 	}
@@ -1157,7 +1161,7 @@ static DBusMessage *modem_set_property(DBusConnection *conn,
 				return __ofono_error_failed(msg);
 
 			modem->pending = dbus_message_ref(msg);
-			modem->timeout = g_timeout_add_seconds(20,
+			modem->timeout = g_timeout_add_seconds(60,
 						set_powered_timeout, modem);
 			return NULL;
 		}
@@ -2182,8 +2186,18 @@ static void modem_unregister(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
+	if (modem->powered == TRUE && modem->driver &&
+		modem->driver->powersave)
+		modem->driver->powersave(modem, TRUE);
+
 	if (modem->atoms)
 		flush_atoms(modem, MODEM_STATE_POWER_OFF);
+
+	if (modem->powered == TRUE)
+		set_powered(modem, FALSE);
+
+	if(modem->driver && modem->driver->modem_shutdown)
+		modem->driver->modem_shutdown(modem);
 
 	__ofono_watchlist_free(modem->atom_watches);
 	modem->atom_watches = NULL;
@@ -2326,7 +2340,7 @@ void ofono_modem_driver_unregister(const struct ofono_modem_driver *d)
 void __ofono_modem_shutdown(void)
 {
 	struct ofono_modem *modem;
-	ofono_bool_t powered_modems = FALSE; // FIXME
+	ofono_bool_t powered_modems = FALSE;
 	GSList *l;
 
 	powering_down = TRUE;
@@ -2346,10 +2360,7 @@ void __ofono_modem_shutdown(void)
 		powered_modems = TRUE;
 	}
 
-	if (powered_modems == FALSE) // FIXME
-		__ofono_exit();
-
-	if (modems_remaining == 0)
+	if (powered_modems == FALSE)
 		__ofono_exit();
 }
 

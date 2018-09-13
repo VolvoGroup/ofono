@@ -1,5 +1,5 @@
 AC_PREREQ(2.60)
-AC_INIT(ofono, 180803)
+AC_INIT(ofono, speja)
 
 AM_INIT_AUTOMAKE([foreign subdir-objects color-tests])
 AC_CONFIG_HEADERS(config.h)
@@ -144,11 +144,6 @@ AC_ARG_ENABLE(atmodem, AC_HELP_STRING([--disable-atmodem],
 				[disable ETSI AT modem support]),
 					[enable_atmodem=${enableval}])
 AM_CONDITIONAL(ATMODEM, test "${enable_atmodem}" != "no")
-
-AC_ARG_ENABLE(cinterionmodem, AC_HELP_STRING([--disable-cinterionmodem],
-				[disable Cinterion modem support]),
-					[enable_cinterionmodem=${enableval}])
-AM_CONDITIONAL(CINTERIONMODEM, test "${enable_cinterionmodem}" != "no")
 
 AC_ARG_ENABLE(cdmamodem, AC_HELP_STRING([--disable-cdmamodem],
 				[disable CDMA AT modem support]),

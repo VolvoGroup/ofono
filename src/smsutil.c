@@ -3423,7 +3423,7 @@ static inline GSList *sms_list_append(GSList *l, const struct sms *in)
  * Breaks up a pdu which doesn't fit in one sms into multiple sms
  * Returns a list of sms messages in order.
  */
-GSList *split_concatenated_pdu_to_list(struct sms *template,
+static GSList *split_concatenated_pdu_to_list(struct sms *template,
 		const unsigned char *data,
 		unsigned int len,
 		guint8 offset,
@@ -3565,7 +3565,7 @@ GSList *sms_datagram_prepare(const char *to,
 		offset += 4;
 	}
 
-	if (len <= (140 - offset)) {
+	if (len <= (unsigned int)(140 - offset)) {
 		template.submit.udl = len + offset;
 		memcpy(template.submit.ud + offset, data, len);
 

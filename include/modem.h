@@ -33,6 +33,7 @@ extern "C" {
 struct ofono_modem;
 struct ofono_gprs;
 struct ofono_sim;
+struct ofono_voicecall;
 
 enum ofono_modem_type {
 	OFONO_MODEM_TYPE_HARDWARE = 0,
@@ -101,6 +102,7 @@ void ofono_modem_remove_interface(struct ofono_modem *modem,
 const char *ofono_modem_get_path(struct ofono_modem *modem);
 struct ofono_sim *ofono_modem_get_sim(struct ofono_modem *modem);
 struct ofono_gprs *ofono_modem_get_gprs(struct ofono_modem *modem);
+struct ofono_voicecall *ofono_modem_get_voicecall(struct ofono_modem *modem);
 
 const struct ofono_modem_driver *ofono_modem_get_driver(struct ofono_modem *modem);
 

@@ -1374,6 +1374,13 @@ static void sms_dispatch(struct ofono_sms *sms, GSList *sms_list)
 		unsigned char *buf;
 		long len;
 
+		// TODO: verify if needed or removed intentionally
+		if (srcport == NO_PORT || dstport == NO_PORT) {
+			ofono_error("Got an 8-bit encoded message, however "
+					"no valid src/address port, ignore");
+			return;
+		}
+
 		buf = sms_decode_datagram(sms_list, &len);
 		if (buf == NULL)
 			return;
