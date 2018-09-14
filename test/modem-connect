@@ -1,3 +1,0 @@
-#!/bin/sh -x
-/usr/local/modem-demo connect vtc.apn.vodafone.net +467190009154005 tjena
-
