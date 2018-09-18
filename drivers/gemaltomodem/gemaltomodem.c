@@ -36,7 +36,7 @@ static int gemaltomodem_init(void)
 {
 	gemalto_location_reporting_init();
 	gemaltowwan_gprs_context_init();
-
+	gemalto_voicecall_init();
 	return 0;
 }
 
@@ -44,6 +44,7 @@ static void gemaltomodem_exit(void)
 {
 	gemalto_location_reporting_exit();
 	gemaltowwan_gprs_context_exit();
+	gemalto_voicecall_exit();
 }
 
 OFONO_PLUGIN_DEFINE(gemaltomodem, "Gemalto modem driver", VERSION,

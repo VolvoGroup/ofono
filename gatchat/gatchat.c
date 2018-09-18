@@ -794,16 +794,6 @@ static void wakeup_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	if (chat->debugf)
 		chat->debugf("Finally woke up the modem\n", chat->debug_data);
 
-	if (chat->wakeup) {
-		g_free(chat->wakeup);
-		chat->wakeup = NULL;
-	}
-
-	if (chat->wakeup_timer) {
-		g_timer_destroy(chat->wakeup_timer);
-		chat->wakeup_timer = 0;
-	}
-
 	g_source_remove(chat->timeout_source);
 	chat->timeout_source = 0;
 }

@@ -1116,7 +1116,8 @@ static gboolean setup_gemalto(struct modem_info* modem)
 
 	GSList *list;
 
-	DBG("type:%d, syspath:%s [%s:%s]", modem->type, modem->syspath, modem->vendor, modem->model);
+	DBG("type:%d, syspath:%s [%s:%s]", modem->type, modem->syspath,
+						modem->vendor, modem->model);
 
 	if (modem->type==MODEM_TYPE_SERIAL) {
 		struct serial_device_info* info;
@@ -1125,7 +1126,7 @@ static gboolean setup_gemalto(struct modem_info* modem)
 		// the following is setup_serial_modem() following, for now
 		info = modem->serial;
 		ofono_modem_set_string(modem->modem, "Device", info->devnode);
-		//ofono_modem_set_string(modem->modem, "ATport", info->devnode); // change to this?
+		//ofono_modem_set_string(modem->modem, "ATport", info->devnode);
 		return TRUE;
 
 	} else if (modem->type!=MODEM_TYPE_USB) {
@@ -1138,8 +1139,9 @@ static gboolean setup_gemalto(struct modem_info* modem)
 	for (list = modem->devices; list; list = list->next) {
 		struct device_info *info = list->data;
 
-		DBG("devnode:%s, subsystem:%s, interface:%s, number:%s, sysattr:%s",
-			info->devnode, info->subsystem, info->interface, info->number, info->sysattr);
+		DBG("node:%s, sub:%s, interface:%s, number:%s, sysattr:%s",
+			info->devnode, info->subsystem, info->interface,
+			info->number, info->sysattr);
 
 		if(g_str_equal(info->subsystem,"tty")) {
 			/* option devices (ttyUSBx) */
@@ -1206,7 +1208,8 @@ static gboolean setup_gemalto(struct modem_info* modem)
 	ofono_modem_set_string(modem->modem, "DescriptorFile", descriptors);
 	ofono_modem_set_string(modem->modem, "Vendor", modem->vendor);
 	ofono_modem_set_string(modem->modem, "Model", modem->model);
-	ofono_modem_set_string(modem->modem, "ConnType", modem->type==MODEM_TYPE_SERIAL?"Serial":"Usb");
+	ofono_modem_set_string(modem->modem, "ConnType",
+				modem->type==MODEM_TYPE_SERIAL?"Serial":"Usb");
 
 	/*
 	 * special cases.
@@ -1275,7 +1278,8 @@ static gboolean setup_xmm7xxx(struct modem_info *modem)
 
 static gboolean setup_sim7100(struct modem_info *modem)
 {
-	const char *at = NULL, *ppp = NULL, *gps = NULL, *diag = NULL, *audio = NULL;
+	const char *at = NULL, *ppp = NULL, *gps = NULL, *diag = NULL;
+	const char *audio = NULL;
 	GSList *list;
 
 	DBG("%s", modem->syspath);
@@ -1619,7 +1623,10 @@ static void add_device(const char *syspath, const char *devname,
 	interface = udev_device_get_property_value(usb_interface, "INTERFACE");
 	number = udev_device_get_property_value(device, "ID_USB_INTERFACE_NUM");
 
-	/* If environment variable is not set, get value from attributes (or parent's ones) */
+	/*
+	 * If environment variable is not set,
+	 * try to get the value from attributes (or parent's ones)
+	 */
 	if (number == NULL) {
 		number = udev_device_get_sysattr_value(device,
 							"bInterfaceNumber");
@@ -1730,6 +1737,7 @@ static struct {
 	{ "quectelqmi",	"qmi_wwan",	"2c7c", "0125"	},
 	{ "quectelqmi",	"qcserial",	"2c7c", "0125"	},
 	{ "ublox",	"cdc_acm",	"1546", "1102"	},
+	{ "ublox",	"cdc_acm",	"1546", "1107"	},
 	{ "ublox",	"rndis_host",	"1546", "1146"	},
 	{ "ublox",	"cdc_acm",	"1546", "1146"	},
 	{ "gemalto",	"cdc_acm",	"1e2d"		},
@@ -1852,7 +1860,8 @@ static void check_device(struct udev_device *device)
 			return;
 	}
 
-	ofono_ignore_device = udev_device_get_property_value(device, "OFONO_IGNORE_DEVICE");
+	ofono_ignore_device = udev_device_get_property_value(device,
+							"OFONO_IGNORE_DEVICE");
 		if (ofono_ignore_device)
 			return; /* skip this device */
 
@@ -1892,7 +1901,8 @@ static gboolean create_modem(gpointer key, gpointer value, gpointer user_data)
 			ofono_modem_set_string(modem->modem, "SystemPath",
 								syspath);
 			if (ofono_modem_register(modem->modem) < 0) {
-				DBG("could not register modem '%s'", modem->driver);
+				DBG("could not register modem '%s'",
+								modem->driver);
 				return TRUE;
 			}
 

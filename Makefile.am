@@ -398,6 +398,7 @@ builtin_sources += drivers/atmodem/atutil.h \
 			drivers/gemaltomodem/gemaltomodem.h \
 			drivers/gemaltomodem/gemaltomodem.c \
 			drivers/gemaltomodem/gprs-context-wwan.c \
+			drivers/gemaltomodem/voicecall.c \
 			drivers/gemaltomodem/location-reporting.c
 
 builtin_modules += xmm7modem
@@ -860,7 +861,7 @@ if TEST
 noinst_PROGRAMS = $(unit_tests) \
 			unit/test-sms-root unit/test-mux unit/test-caif
 else
-noinst_PROGRAMS = 
+noinst_PROGRAMS =
 endif
 
 unit_test_common_SOURCES = unit/test-common.c src/common.c src/util.c

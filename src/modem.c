@@ -1371,7 +1371,7 @@ static gboolean trigger_interface_update(void *data)
 
 	modem->interface_update = 0;
 
-	DBG("trigger_interface_update");
+	DBG("");
 
 	return FALSE;
 }

@@ -723,10 +723,10 @@ static void gprs_initialized(struct ofono_gprs *gprs)
 						NULL, NULL, NULL);
 		break;
 	case OFONO_VENDOR_GEMALTO:
-		g_at_chat_register(gd->chat, "+CIEV: psinfo,", gemalto_ciev_bearer_notify,
-							FALSE, gprs, NULL);
-		g_at_chat_register(gd->chat, "+CIEV: ceer,", gemalto_ciev_ceer_notify,
-							FALSE, gprs, NULL);
+		g_at_chat_register(gd->chat, "+CIEV: psinfo,",
+			gemalto_ciev_bearer_notify, FALSE, gprs, NULL);
+		g_at_chat_register(gd->chat, "+CIEV: ceer,",
+			gemalto_ciev_ceer_notify, FALSE, gprs, NULL);
 		break;
 	default:
 		g_at_chat_register(gd->chat, "+CPSB:", cpsb_notify,
@@ -799,7 +799,7 @@ retry:
 
 	g_at_result_iter_close_list(&iter);
 
-	if(gd->vendor==OFONO_VENDOR_GEMALTO || gd->vendor==OFONO_VENDOR_GEMALTO) {
+	if(gd->vendor==OFONO_VENDOR_GEMALTO) {
 		/*
 		 * Gemalto prefers to print as much information as available
 		 * for support purposes
@@ -922,6 +922,8 @@ static int at_gprs_probe(struct ofono_gprs *gprs,
 {
 	GAtChat *chat = data;
 	struct gprs_data *gd;
+	int autoattach;
+	struct ofono_modem* modem=ofono_gprs_get_modem(gprs);
 
 	gd = g_try_new0(struct gprs_data, 1);
 	if (gd == NULL)
@@ -930,16 +932,14 @@ static int at_gprs_probe(struct ofono_gprs *gprs,
 	gd->chat = g_at_chat_clone(chat);
 	gd->vendor = vendor;
 
-
 	ofono_gprs_set_data(gprs, gd);
 
-	if (gd->vendor==OFONO_VENDOR_GEMALTO ||
-				gd->vendor==OFONO_VENDOR_GEMALTO_CGAUTH) {
+	if (gd->vendor==OFONO_VENDOR_GEMALTO) {
+		autoattach=ofono_modem_get_integer(modem, "Gto_Autoattach");
 		/* set autoattach */
-		gd->auto_attach = TRUE;
+		gd->auto_attach = (autoattach==1);
 		/* skip the cgdcont scanning: set manually */
 		test_and_set_regstatus(gprs);
-
 	} else {
 		g_at_chat_send(gd->chat, "AT+CGDCONT=?", cgdcont_prefix,
 						at_cgdcont_test_cb, gprs, NULL);

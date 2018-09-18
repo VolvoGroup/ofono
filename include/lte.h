@@ -30,17 +30,12 @@ extern "C" {
 #include <ofono/types.h>
 #include <gdbus.h>
 
-enum ofono_lte_auth_method {
-	OFONO_LTE_AUTH_METHOD_NONE,
-	OFONO_LTE_AUTH_METHOD_PAP,
-	OFONO_LTE_AUTH_METHOD_CHAP,
-};
-
 struct ofono_lte_default_attach_info {
 	char apn[OFONO_GPRS_MAX_APN_LENGTH + 1];
-	enum ofono_lte_auth_method auth_type;
 	char username[OFONO_GPRS_MAX_USERNAME_LENGTH + 1];
 	char password[OFONO_GPRS_MAX_PASSWORD_LENGTH + 1];
+	enum ofono_gprs_proto proto;
+	enum ofono_gprs_auth_method auth_method;
 };
 
 typedef void (*ofono_lte_cb_t)(const struct ofono_error *error, void *data);
@@ -71,6 +66,8 @@ void ofono_lte_remove(struct ofono_lte *lte);
 void ofono_lte_set_data(struct ofono_lte *lte, void *data);
 
 void *ofono_lte_get_data(const struct ofono_lte *lte);
+
+struct ofono_modem *ofono_lte_get_modem(const struct ofono_lte *lte);
 
 #ifdef __cplusplus
 }

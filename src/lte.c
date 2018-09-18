@@ -65,7 +65,7 @@ static void lte_load_settings(struct ofono_lte *lte)
 	char *apn;
 	char *username;
 	char *password;
-	enum ofono_lte_auth_method auth_type;
+	enum ofono_gprs_auth_method auth_method;
 
 	if (lte->imsi == NULL)
 		return;
@@ -84,7 +84,7 @@ static void lte_load_settings(struct ofono_lte *lte)
 					LTE_USERNAME, NULL);
 	password = g_key_file_get_string(lte->settings, SETTINGS_GROUP ,
 					LTE_PASSWORD, NULL);
-	auth_type = g_key_file_get_integer(lte->settings, SETTINGS_GROUP ,
+	auth_method = g_key_file_get_integer(lte->settings, SETTINGS_GROUP ,
 					AUTH_TYPE, NULL);
 	if (apn) {
 		strcpy(lte->info.apn, apn);
@@ -103,8 +103,8 @@ static void lte_load_settings(struct ofono_lte *lte)
 
 	}
 
-	if (auth_type) {
-		lte->info.auth_type = auth_type;
+	if (auth_method) {
+		lte->info.auth_method = auth_method;
 	}
 
 }
@@ -116,20 +116,20 @@ static DBusMessage *lte_get_properties(DBusConnection *conn,
 	const char *apn = lte->info.apn;
 	const char *username = lte->info.username;
 	const char *password = lte->info.password;
-	char* auth_type = g_new0(char, 5);
+	char* auth_method = g_new0(char, 5);
 	DBusMessage *reply;
 	DBusMessageIter iter;
 	DBusMessageIter dict;
 
-	switch (lte->info.auth_type) {
-	case OFONO_LTE_AUTH_METHOD_PAP:
-		g_strlcpy(auth_type, "pap", 5);
+	switch (lte->info.auth_method) {
+	case OFONO_GPRS_AUTH_METHOD_PAP:
+		g_strlcpy(auth_method, "pap", 5);
 		break;
-	case OFONO_LTE_AUTH_METHOD_CHAP:
-		g_strlcpy(auth_type, "chap", 5);
+	case OFONO_GPRS_AUTH_METHOD_CHAP:
+		g_strlcpy(auth_method, "chap", 5);
 		break;
 	default:
-		g_strlcpy(auth_type, "", 5);
+		g_strlcpy(auth_method, "", 5);
 		break;
 	}
 	reply = dbus_message_new_method_return(msg);
@@ -144,10 +144,10 @@ static DBusMessage *lte_get_properties(DBusConnection *conn,
 	ofono_dbus_dict_append(&dict, DEFAULT_APN_KEY, DBUS_TYPE_STRING, &apn);
 	ofono_dbus_dict_append(&dict, LTE_USERNAME, DBUS_TYPE_STRING, &username);
 	ofono_dbus_dict_append(&dict, LTE_PASSWORD, DBUS_TYPE_STRING, &password);
-	ofono_dbus_dict_append(&dict, AUTH_TYPE, DBUS_TYPE_STRING, &auth_type);
+	ofono_dbus_dict_append(&dict, AUTH_TYPE, DBUS_TYPE_STRING, &auth_method);
 	dbus_message_iter_close_container(&iter, &dict);
 
-	g_free(auth_type);
+	g_free(auth_method);
 	return reply;
 }
 
@@ -161,7 +161,7 @@ static void lte_set_default_attach_info_cb(const struct ofono_error *error,
 	const char *apn = lte->info.apn;
 	const char *username = lte->info.username;
 	const char *password = lte->info.password;
-	enum ofono_lte_auth_method auth_type = lte->info.auth_type;
+	enum ofono_gprs_auth_method auth_method = lte->info.auth_method;
 
 	if(error != NULL) {
 		DBG("%s error %d", path, error->type);
@@ -188,8 +188,8 @@ static void lte_set_default_attach_info_cb(const struct ofono_error *error,
 			OFONO_GPRS_MAX_PASSWORD_LENGTH + 1);
 	}
 
-	if (lte->pending_info.auth_type >= 0 && lte->pending_info.auth_type <= 3) {
-		lte->info.auth_type = lte->pending_info.auth_type;
+	if (lte->pending_info.auth_method >= 0 && lte->pending_info.auth_method <= 3) {
+		lte->info.auth_method = lte->pending_info.auth_method;
 	}
 
 	if (lte->settings) {
@@ -218,13 +218,13 @@ static void lte_set_default_attach_info_cb(const struct ofono_error *error,
 			g_key_file_set_string(lte->settings, SETTINGS_GROUP,
 						LTE_PASSWORD, lte->info.password);
 
-		if (lte->info.auth_type == 0)
+		if (lte->info.auth_method == 0)
 			/* Clear entry on empty Authentication type. */
 			g_key_file_remove_key(lte->settings, SETTINGS_GROUP,
 						AUTH_TYPE, NULL);
 		else
 			g_key_file_set_integer(lte->settings, SETTINGS_GROUP,
-						AUTH_TYPE, lte->info.auth_type);
+						AUTH_TYPE, lte->info.auth_method);
 
 		storage_sync(lte->imsi, SETTINGS_STORE, lte->settings);
 	}
@@ -247,7 +247,7 @@ static void lte_set_default_attach_info_cb(const struct ofono_error *error,
 	ofono_dbus_signal_property_changed(conn, path,
 					OFONO_CONNECTION_CONTEXT_INTERFACE,
 					AUTH_TYPE,
-					DBUS_TYPE_UINT32, &auth_type);
+					DBUS_TYPE_UINT32, &auth_method);
 
 }
 
@@ -327,7 +327,7 @@ static DBusMessage *lte_set_password(struct ofono_lte *lte,
 
 static DBusMessage *lte_set_auth_type(struct ofono_lte *lte,
 				DBusConnection *conn, DBusMessage *msg,
-				enum ofono_lte_auth_method auth_type)
+				enum ofono_gprs_auth_method auth_method)
 {
 	void *data = lte;
 
@@ -337,16 +337,16 @@ static DBusMessage *lte_set_auth_type(struct ofono_lte *lte,
 	if (lte->pending)
 		return __ofono_error_busy(msg);
 
-	if (auth_type == lte->info.auth_type)
+	if (auth_method == lte->info.auth_method)
 		return dbus_message_new_method_return(msg);
 
 	/* We do care about empty value: it can be used for reset. */
-	if (auth_type >= 3 && auth_type <= 0)
+	if (auth_method >= 3 && auth_method <= 0)
 		return __ofono_error_invalid_format(msg);
 
 	lte->pending = dbus_message_ref(msg);
 
-	lte->pending_info.auth_type = auth_type;
+	lte->pending_info.auth_method = auth_method;
 
 	lte_set_default_attach_info_cb(NULL, data);
 
@@ -361,7 +361,7 @@ static DBusMessage *lte_set_property(DBusConnection *conn,
 	DBusMessageIter var;
 	const char *property;
 	const char *str;
-	enum ofono_lte_auth_method auth_type;
+	enum ofono_gprs_auth_method auth_method;
 
 	if (!dbus_message_iter_init(msg, &iter))
 		return __ofono_error_invalid_args(msg);
@@ -410,9 +410,9 @@ static DBusMessage *lte_set_property(DBusConnection *conn,
 
 		dbus_message_iter_get_basic(&var, &str);
 
-		auth_type = get_auth_type_from_str(str);
+		auth_method = get_auth_type_from_str(str);
 
-		return lte_set_auth_type(lte, conn, msg, auth_type);
+		return lte_set_auth_type(lte, conn, msg, auth_method);
 	}
 
 	return __ofono_error_invalid_args(msg);
@@ -586,4 +586,9 @@ void ofono_lte_set_data(struct ofono_lte *lte, void *data)
 void *ofono_lte_get_data(const struct ofono_lte *lte)
 {
 	return lte->driver_data;
+}
+
+struct ofono_modem *ofono_lte_get_modem(const struct ofono_lte *lte)
+{
+	return __ofono_atom_get_modem(lte->atom);
 }

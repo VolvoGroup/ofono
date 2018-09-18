@@ -221,7 +221,6 @@ static void at_cmgs(struct ofono_sms *sms, const unsigned char *pdu,
 
 	switch(data->vendor) {
 	case OFONO_VENDOR_GEMALTO:
-	case OFONO_VENDOR_GEMALTO_CGAUTH:
 		break;
 	default:
 		if (mms) {
@@ -337,7 +336,6 @@ static inline void at_ack_delivery(struct ofono_sms *sms)
 	if (data->cnma_ack_pdu) {
 		switch (data->vendor) {
 		case OFONO_VENDOR_GEMALTO:
-		case OFONO_VENDOR_GEMALTO_CGAUTH:
 			snprintf(buf, sizeof(buf), "AT+CNMA=1");
 			break;
 		default:
@@ -420,7 +418,6 @@ static void at_cmt_notify(GAtResult *result, gpointer user_data)
 
 	switch (data->vendor) {
 	case OFONO_VENDOR_GEMALTO:
-	case OFONO_VENDOR_GEMALTO_CGAUTH:
 		if (!g_at_result_iter_next_number(&iter, &tpdu_len)) {
 			/*
 			 * Some Gemalto modems (ALS3,PLS8...), act in

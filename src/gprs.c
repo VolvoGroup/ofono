@@ -261,6 +261,8 @@ static const char *gprs_auth_method_to_string(enum ofono_gprs_auth_method auth)
 		return "chap";
 	case OFONO_GPRS_AUTH_METHOD_PAP:
 		return "pap";
+	default:
+		return NULL;
 	};
 
 	return NULL;
@@ -967,7 +969,6 @@ static void gprs_set_attached_property(struct ofono_gprs *gprs,
 	DBusConnection *conn = ofono_dbus_get_connection();
 	dbus_bool_t value = attached;
 
-	DBG("%d", attached);
 	if (gprs->attached == attached)
 		return;
 

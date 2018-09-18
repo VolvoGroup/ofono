@@ -31,7 +31,6 @@
 #include <errno.h>
 
 #include <glib.h>
-#include <ofono.h>
 
 #include "ringbuffer.h"
 #include "gatio.h"
@@ -123,23 +122,14 @@ static gboolean received_data(GIOChannel *channel, GIOCondition cond,
 		io->read_handler(io->buf, io->read_data);
 
 	if (cond & (G_IO_HUP | G_IO_ERR))
-	{
-		DBG("Modem hung up!!");
 		return FALSE;
-	}
 
 	if (read_count > 0 && rbytes == 0 && status != G_IO_STATUS_AGAIN)
-	{
-		DBG("No bytes read. Status=%d", status);
 		return FALSE;
-	}
 
 	/* We're overflowing the buffer, shutdown the socket */
 	if (ring_buffer_avail(io->buf) == 0)
-	{
-		DBG("Ring buffer overflow!!");
 		return FALSE;
-	}
 
 	return TRUE;
 }

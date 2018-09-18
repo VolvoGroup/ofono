@@ -65,49 +65,44 @@
 #endif
 
 #include <drivers/qmimodem/qmi.h>
-#include <drivers/gemaltomodem/gemaltomodel.h>
 
 #include <src/storage.h>
 
 #define REDCOLOR "\x1b\x5b\x30\x31\x3b\x33\x31\x6d"
 #define NOCOLOR "\x1b\x5b\x30\x30\x6d"
 
-
 #define HARDWARE_MONITOR_INTERFACE OFONO_SERVICE ".gemalto.HardwareMonitor"
 #define GEMALTO_NITZ_TIME_INTERFACE OFONO_SERVICE ".gemalto.TimeServices"
 #define COMMAND_PASSTHROUGH_INTERFACE OFONO_SERVICE ".gemalto.CommandPassthrough"
 
-#define GEMALTO_CONNECTION_TYPE_SERIAL				(0x00000001)
-#define GEMALTO_CONNECTION_TYPE_USB				(0x00000002)
+enum gemalto_connection_type {
+	GEMALTO_CONNECTION_SERIAL=1,
+	GEMALTO_CONNECTION_USB=2,
+};
 
-#define GEMALTO_CONFIG_MBIM_PRESENT				(0x00000001)	// after probe
-#define GEMALTO_CONFIG_MBIM_PROBE				(0x00000002)	// do probe: if "mbim_ctl" is set
-#define GEMALTO_CONFIG_MBIM_TESTING				(0x01000000)	// special flag for 2-stages failure on OPEN
-#define GEMALTO_CONFIG_QMI_PRESENT				(0x00000004)	// after probe
-#define GEMALTO_CONFIG_QMI_PROBE				(0x00000008)	// do probe: if "qmi_ctl" is set
-#define GEMALTO_CONFIG_ECMNCM_PRESENT				(0x00000010)	// do probe: if "qmi_ctl" is set
-#define GEMALTO_CONFIG_ECMNCM_PROBE				(0x00000020)	// do probe: if "qmi_ctl" is set
-#define GEMALTO_GINA						(0x00000100)	// Gemalto generic interpreter at
-#define GEMALTO_CONFIG_APP_PRESENT				(0x00001000)	// after probe
-#define GEMALTO_CONFIG_APP_PROBE_DIRECT				(0x00002000)	// probe and AT^SQPORT on serial: if "app" is set
-#define GEMALTO_CONFIG_APP_PROBE_INVERSE			(0x00004000)	// probe: if "app2" is set
-#define GEMALTO_CONFIG_MDM_PRESENT				(0x00010000)	// after probe
-#define GEMALTO_CONFIG_MDM_PROBE_DIRECT				(0x00020000)	// probe and AT^SQPORT on serial: if "mdm" is set
-#define GEMALTO_CONFIG_MDM_PROBE_INVERSE			(0x00040000)	// probe: if "mdm2" is set
-#define GEMALTO_CONFIG_USE_MDM_FOR_APP				(0x00080000)	// after probe
-#define GEMALTO_CONFIG_MBIM_ONLY				(0x10000000)	// internal and external configuration: env, udev, to be defined
-#define GEMALTO_CONFIG_QMI_ONLY					(0x20000000)	// external configuration: env, udev, to be defined
+enum gemalto_device_state {
+	STATE_ABSENT=0,
+	STATE_PROBE=1,
+	STATE_TESTING=2,
+	STATE_PRESENT=3,
+	STATE_PROBE_DIRECT=4,
+	STATE_PROBE_INVERSE=5,
+	STATE_PROBE_DIRECT_INVERSE=6,
+};
 
-#define GEMALTO_COMMAND_VOICE_AVAIL				(0x00000001)	// after probe (AT^SAIC?)
-#define GEMALTO_CONFIG_SGAUTH_SYNTAX				(0x00000002)	// sgauth vs cgauth
-#define GEMALTO_COMMAND_SWWAN_AVAIL				(0x00000100)	// after probe (AT^SWWAN?), from modem model, if !mbim and !qmi and cdc-ecm
-#define GEMALTO_COMMAND_CTX17_AVAIL				(0x00000200)	// after probe (AT+CGDCONT=17), from modem model, if !mbim and !qmi and cdc-ecm
-#define GEMALTO_COMMAND_CTX3_AVAIL				(0x00000400)	// from modem model
-#define GEMALTO_COMMAND_PPP_AVAIL				(0x00010000)	// from port type and/or absence of alternatives: no wwan, no mbim, no qmi, mdm avail
-#define GEMALTO_COMMAND_CGDATA_AVAIL				(0x00030000)	// done in driver, rfu
-#define GEMALTO_CONFIG_AUTOATTACH_ENABLED			(0x01000000)	// after query command probe
-#define GEMALTO_CONFIG_AUTOCTXACT_ENABLED			(0x02000000)	// to be defined
-#define GEMALTO_CONFIG_MONITOR_MODE				(0x80000000)	// external configuration: env, udev, to be defined
+enum auth_option {
+	GEMALTO_CGAUTH_USER_PWD_PARTIAL=0,
+	GEMALTO_SGAUTH_PWD_USER_PARTIAL=1,
+	GEMALTO_SGAUTH_USER_PWD_FULL=2, /* TODO: use it when needed */
+};
+
+enum gprs_option {
+	NO_GPRS=0,
+	USE_SWWAN=1,
+	USE_CTX17=2,
+	USE_CTX3=3,
+	USE_PPP=4,
+};
 
 static const char *none_prefix[] = { NULL };
 static const char *sctm_prefix[] = { "^SCTM:", NULL };
@@ -138,12 +133,26 @@ struct gemalto_data {
 	guint modem_ready_id_inv;
 	guint trial_cmd_id_inv;
 
-	guint conn_type; /* MODEM_TYPE_SERIAL, MODEM_TYPE_USB */
 	guint model;
 	guint probing_timer;
 	guint init_waiting_time;
-	guint hw_configuration;
-	guint sw_configuration;
+
+	enum gemalto_connection_type conn;
+	enum gemalto_device_state mbim;
+	enum gemalto_device_state qmi;
+	enum gemalto_device_state ecmncm;
+	enum gemalto_device_state gina;
+	enum gemalto_device_state appport;
+	enum gemalto_device_state mdmport;
+	gboolean inverse_enum;
+	gboolean use_mdm_for_app;
+	gboolean voice_avail;
+	enum auth_option auth_syntax;
+	enum gprs_option gprs_opt;
+	gboolean autoattach;
+	gboolean autoconfig;
+	gboolean autoactivation;
+	gboolean vts_with_quotes;
 
 	void *device; /* struct mbim_device* or struct qmi_device* */
 
@@ -164,12 +173,12 @@ static const char *gemalto_get_string(struct ofono_modem *modem, const char *k)
 {
 	const char *v;
 
-	if(!modem || !k || !*k)
+	if (!modem || !k || !*k)
 		return NULL;
 
 	v = ofono_modem_get_string(modem, k);
 
-	if(!v || !*v)
+	if (!v || !*v)
 		return NULL;
 
 	return v;
@@ -249,20 +258,24 @@ static void gemalto_remove(struct ofono_modem *modem)
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 
 #ifdef HAVE_ELL
-	if(data->hw_configuration&GEMALTO_CONFIG_MBIM_PRESENT)
+	if (data->mbim!=STATE_ABSENT) {
 		mbim_device_shutdown(data->device);
+	}
+
 #endif
 
-	if(data->hw_configuration&GEMALTO_CONFIG_QMI_PRESENT)
+	if (data->qmi==STATE_PRESENT) {
 		qmi_device_unref(data->device);
+		data->device = NULL;
+	}
 
-	if(data->app) {
+	if (data->app) {
 		g_at_chat_unregister_all(data->app);
 		g_at_chat_unref(data->app);
 		data->app = NULL;
 	}
 
-	if(data->mdm) {
+	if (data->mdm) {
 		g_at_chat_unregister_all(data->mdm);
 		g_at_chat_unref(data->mdm);
 		data->mdm = NULL;
@@ -673,7 +686,7 @@ static void gemalto_hardware_monitor_cleanup(void *modem)
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 	struct gemalto_hardware_monitor *hm = data->hm;
 
-	if(hm)
+	if (hm)
 		g_free(hm);
 
 	hm=NULL;
@@ -749,7 +762,7 @@ static ofono_bool_t modem_from_data_cmp(struct ofono_modem *modem,
 {
 	void *value = ofono_modem_get_data(modem);
 
-	if(value==userdata)
+	if (value==userdata)
 		return TRUE;
 
 	return FALSE;
@@ -818,9 +831,12 @@ static void command_passthrough_cb(gboolean ok, GAtResult *result,
 	g_at_result_iter_init(&iter, result);
 
 	while (g_at_result_iter_next(&iter, NULL)) {
-		sprintf(answer+strlen(answer),"%s\r\n",g_at_result_iter_raw_line(&iter));
+		sprintf(answer+strlen(answer),"%s\r\n",
+					g_at_result_iter_raw_line(&iter));
 	}
-	sprintf(answer+strlen(answer),"%s\r\n",g_at_result_final_response(result));
+
+	sprintf(answer+strlen(answer),"%s\r\n",
+					g_at_result_final_response(result));
 
 	DBG("answer_len: %u, answer_string: %s", len, answer);
 	command_passthrough_signal_answer(answer, user_data);
@@ -838,7 +854,7 @@ static DBusMessage *command_passthrough_simple(DBusConnection *conn,
 	DBusMessageIter iter;
 	const char *command;
 
-	if(!cbd)
+	if (!cbd)
 		return __ofono_error_not_available(msg);
 
 	cbd->user = msg;
@@ -891,7 +907,7 @@ static DBusMessage *command_passthrough_with_prompt(DBusConnection *conn,
 	DBusMessageIter iter;
 	const char *command, *prompt, *argument;
 
-	if(!cbd)
+	if (!cbd)
 		return __ofono_error_not_available(msg);
 
 	cbd->user = msg;
@@ -979,10 +995,10 @@ static void passthrough_stored(void *user_data)
 		sprintf(key, "command_%d", index);
 		command = g_key_file_get_string(f, "Simple", key, NULL);
 
-		if(!command)
+		if (!command)
 			break;
 
-		DBG(REDCOLOR"executing stored command simple: %s"NOCOLOR, command);
+		DBG("executing stored command simple: %s", command);
 		g_at_chat_send(data->app, command, NULL, NULL, NULL, NULL);
 	}
 
@@ -994,7 +1010,7 @@ static void passthrough_stored(void *user_data)
 		sprintf(key, "argument_%d", index);
 		argument = g_key_file_get_string(f, "WithPrompt", key, NULL);
 
-		if(!command || !prompt || !argument)
+		if (!command || !prompt || !argument)
 			break;
 
 		DBG("executing stored command with prompt: %s", command);
@@ -1054,21 +1070,39 @@ static void saic_probe(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct gemalto_data *data = ofono_modem_get_data(user_data);
 
-	if(ok)
-		data->sw_configuration |= GEMALTO_COMMAND_VOICE_AVAIL;
+	if (ok)
+		data->voice_avail = TRUE;
 	else
-		data->sw_configuration &= ~GEMALTO_COMMAND_VOICE_AVAIL;
+		data->voice_avail = FALSE;
 }
 
 static void sgauth_probe(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct gemalto_data *data = ofono_modem_get_data(user_data);
 
-	if(ok)
-		data->sw_configuration |= GEMALTO_CONFIG_SGAUTH_SYNTAX;
+	if (ok)
+		data->auth_syntax = GEMALTO_SGAUTH_PWD_USER_PARTIAL;
 	else
-		data->sw_configuration &= ~GEMALTO_CONFIG_SGAUTH_SYNTAX;
+		data->auth_syntax = GEMALTO_CGAUTH_USER_PWD_PARTIAL;
 }
+
+#ifdef HAVE_ELL
+static void mbim_device_closed(void *user_data)
+{
+	struct ofono_modem *modem = user_data;
+	struct gemalto_data *md = ofono_modem_get_data(modem);
+
+	if (!md)
+		return;
+
+	md->mbim = STATE_PROBE; /* reset for future attempt */
+
+	if (md->device)
+		mbim_device_unref(md->device);
+
+	md->device = NULL;
+}
+#endif
 
 static int gemalto_initialize(void *user_data)
 {
@@ -1076,20 +1110,20 @@ static int gemalto_initialize(void *user_data)
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 	char *urcdest;
 
-	if ((data->hw_configuration&GEMALTO_CONFIG_APP_PROBE_INVERSE) ||
-		(data->hw_configuration&GEMALTO_CONFIG_MDM_PROBE_INVERSE)) {
-		ofono_modem_set_string(modem, "GNSS", gemalto_get_string(modem, "GNSSBis"));
-		ofono_modem_set_string(modem, "RSA", gemalto_get_string(modem, "RSABis"));
+	if (data->inverse_enum) {
+		ofono_modem_set_string(modem, "GNSS",
+					gemalto_get_string(modem, "GNSSBis"));
+		ofono_modem_set_string(modem, "RSA",
+					gemalto_get_string(modem, "RSABis"));
 	}
 
 	DBG("app:%d, mdm:%d, mbim:%d, qmi:%d",
-		data->hw_configuration&GEMALTO_CONFIG_APP_PRESENT,
-		data->hw_configuration&GEMALTO_CONFIG_MDM_PRESENT,
-		data->hw_configuration&GEMALTO_CONFIG_MBIM_PRESENT,
-		data->hw_configuration&GEMALTO_CONFIG_QMI_PRESENT);
+		data->appport==STATE_PRESENT,
+		data->mdmport==STATE_PRESENT,
+		data->mbim==STATE_PRESENT,
+		data->qmi==STATE_PRESENT);
 
-	if(!(data->hw_configuration&GEMALTO_CONFIG_APP_PRESENT) &&
-		!(data->hw_configuration&GEMALTO_CONFIG_MDM_PRESENT)) {
+	if (data->appport==STATE_ABSENT && data->mdmport==STATE_ABSENT) {
 		DBG("no AT interface available. Removing this device.");
 		ofono_modem_set_powered(modem, FALSE);
 		return -EINVAL;
@@ -1097,30 +1131,38 @@ static int gemalto_initialize(void *user_data)
 
 	urcdest = "AT^SCFG=\"URC/DstIfc\",\"app\"";
 
-	if(!(data->hw_configuration&GEMALTO_CONFIG_APP_PRESENT)) {
-		data->hw_configuration |= GEMALTO_CONFIG_USE_MDM_FOR_APP;
+	if (data->appport==STATE_ABSENT) {
+		data->use_mdm_for_app = TRUE;
 		data->app=data->mdm;
 		urcdest = "AT^SCFG=\"URC/DstIfc\",\"mdm\"";
 	}
 
-	if(!data->mdm && (data->sw_configuration&GEMALTO_GINA)) {
+#ifdef HAVE_ELL
+	if (data->mbim == STATE_PRESENT) {
+		mbim_device_set_disconnect_handler(data->device,
+				mbim_device_closed, modem, NULL);
+
+	}
+#endif
+
+	if (!data->mdm && (data->gina==STATE_PRESENT)) {
 		data->mdm=data->app; /*GINA modem can start PPP from any port*/
-		data->hw_configuration |= GEMALTO_CONFIG_MDM_PRESENT;
+		data->mdmport = STATE_PRESENT;
 	}
 
-	if(data->hw_configuration&GEMALTO_CONFIG_MDM_PRESENT)
-		data->sw_configuration |= GEMALTO_COMMAND_PPP_AVAIL;
+	if (data->mdmport==STATE_PRESENT && data->gprs_opt==NO_GPRS)
+		data->gprs_opt=USE_PPP;
 
 	g_at_chat_send(data->app, "ATE0", none_prefix, NULL, NULL, NULL);
 
-	if (!(data->sw_configuration&GEMALTO_GINA))
+	if (data->gina!=STATE_PRESENT)
 		g_at_chat_send(data->app, urcdest, none_prefix, NULL, NULL,
 									NULL);
 
 	/* numeric error codes are interpreted by atmodem/atutil.c functions */
 	g_at_chat_send(data->app, "AT+CMEE=1", none_prefix, NULL, NULL, NULL);
 
-	if(data->mdm)
+	if (data->mdm)
 		g_at_chat_send(data->mdm, "AT&C0", none_prefix, NULL, NULL,
 									NULL);
 
@@ -1168,13 +1210,12 @@ static void closeport(gpointer user_data)
 
 	sprintf(s, "closeport_%u",closeport_thnum++);
 
-	if(!g_thread_new(s, closeport_thread, user_data))
+	if (!g_thread_new(s, closeport_thread, user_data))
 #endif
 	/* in case of thread creation failure or no thread support: */
 		g_at_chat_unref(port);
 
 }
-
 
 static int gemalto_enable_mdm_fail(void *user_data)
 {
@@ -1186,16 +1227,19 @@ static int gemalto_enable_mdm_fail(void *user_data)
 		data->probing_timer = 0; /* remove the timer reference */
 	}
 
-	data->hw_configuration &= ~GEMALTO_CONFIG_MDM_PRESENT;
+	data->mdmport = STATE_ABSENT;
 
-	if (data->hw_configuration&GEMALTO_CONFIG_MDM_PROBE_DIRECT) {
+	if (data->mdmport==STATE_PROBE_DIRECT ||
+				data->mdmport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->mdm, data->modem_ready_id);
 		data->modem_ready_id = 0;
 		closeport(data->mdm);
 		data->trial_cmd_id = 0;
 		data->mdm=NULL;
 	}
-	if (data->hw_configuration&GEMALTO_CONFIG_MDM_PROBE_INVERSE) {
+
+	if (data->mdmport==STATE_PROBE_INVERSE ||
+				data->mdmport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->at_tmp, data->modem_ready_id_inv);
 		data->modem_ready_id_inv = 0;
 		closeport(data->at_tmp);
@@ -1207,7 +1251,8 @@ static int gemalto_enable_mdm_fail(void *user_data)
 	return FALSE;
 }
 
-static void gemalto_enable_mdm_startup_inv(GAtResult *result, gpointer user_data)
+static void gemalto_enable_mdm_startup_inv(GAtResult *result,
+							gpointer user_data)
 {
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
@@ -1218,9 +1263,7 @@ static void gemalto_enable_mdm_startup_inv(GAtResult *result, gpointer user_data
 		data->probing_timer = 0; /* remove the timer reference */
 	}
 
-	if (data->hw_configuration&GEMALTO_CONFIG_MDM_PROBE_DIRECT) {
-		data->hw_configuration &= ~GEMALTO_CONFIG_APP_PROBE_DIRECT;
-		data->hw_configuration &= ~GEMALTO_CONFIG_MDM_PROBE_DIRECT;
+	if (data->mdmport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->mdm, data->modem_ready_id);
 		data->modem_ready_id = 0;
 		closeport(data->mdm);
@@ -1241,7 +1284,10 @@ static void gemalto_enable_mdm_startup_inv(GAtResult *result, gpointer user_data
 
 	if (data->mdm) {
 		g_at_chat_set_debug(data->mdm, gemalto_debug, "Mdm: ");
-		data->hw_configuration |= GEMALTO_CONFIG_APP_PRESENT;
+		data->mdmport = STATE_PRESENT;
+		data->inverse_enum=TRUE;
+	} else {
+		data->mdmport = STATE_ABSENT;
 	}
 
 	gemalto_initialize(modem);
@@ -1258,9 +1304,7 @@ static void gemalto_enable_mdm_startup(GAtResult *result, gpointer user_data)
 		data->probing_timer = 0; /* remove the timer reference */
 	}
 
-	if (data->hw_configuration&GEMALTO_CONFIG_MDM_PROBE_INVERSE) {
-		data->hw_configuration &= ~GEMALTO_CONFIG_APP_PROBE_INVERSE;
-		data->hw_configuration &= ~GEMALTO_CONFIG_MDM_PROBE_INVERSE;
+	if (data->mdmport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->at_tmp, data->modem_ready_id_inv);
 		data->modem_ready_id_inv = 0;
 		closeport(data->at_tmp);
@@ -1280,7 +1324,9 @@ static void gemalto_enable_mdm_startup(GAtResult *result, gpointer user_data)
 
 	if (data->mdm) {
 		g_at_chat_set_debug(data->mdm, gemalto_debug, "Mdm: ");
-		data->hw_configuration |= GEMALTO_CONFIG_MDM_PRESENT;
+		data->mdmport = STATE_PRESENT;
+	} else {
+		data->mdmport = STATE_ABSENT;
 	}
 
 	gemalto_initialize(modem);
@@ -1297,11 +1343,7 @@ static void gemalto_enable_mdm_cb_inv(gboolean ok, GAtResult *result, gpointer
 		data->probing_timer = 0; /* remove the timer reference */
 	}
 
-	data->hw_configuration |= GEMALTO_CONFIG_MDM_PRESENT;
-
-	if (data->hw_configuration&GEMALTO_CONFIG_MDM_PROBE_DIRECT) {
-		data->hw_configuration &= ~GEMALTO_CONFIG_APP_PROBE_DIRECT;
-		data->hw_configuration &= ~GEMALTO_CONFIG_MDM_PROBE_DIRECT;
+	if (data->mdmport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->mdm, data->modem_ready_id);
 		data->modem_ready_id = 0;
 		/*
@@ -1312,17 +1354,18 @@ static void gemalto_enable_mdm_cb_inv(gboolean ok, GAtResult *result, gpointer
 		data->mdm=NULL;
 	}
 
+	data->mdmport = STATE_PRESENT;
+	data->inverse_enum=TRUE;
 	g_at_chat_unregister(data->at_tmp, data->modem_ready_id_inv);
 	data->modem_ready_id_inv = 0;
 	data->trial_cmd_id_inv = 0;
-
 	data->mdm=data->at_tmp;
 	data->at_tmp=NULL;
-
 	gemalto_initialize(modem);
 }
 
-static void gemalto_enable_mdm_cb(gboolean ok, GAtResult *result, gpointer user_data)
+static void gemalto_enable_mdm_cb(gboolean ok, GAtResult *result,
+							gpointer user_data)
 {
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
@@ -1332,11 +1375,7 @@ static void gemalto_enable_mdm_cb(gboolean ok, GAtResult *result, gpointer user_
 		data->probing_timer = 0; /* remove the timer reference */
 	}
 
-	data->hw_configuration |= GEMALTO_CONFIG_MDM_PRESENT;
-
-	if (data->hw_configuration&GEMALTO_CONFIG_MDM_PROBE_INVERSE) {
-		data->hw_configuration &= ~GEMALTO_CONFIG_APP_PROBE_INVERSE;
-		data->hw_configuration &= ~GEMALTO_CONFIG_MDM_PROBE_INVERSE;
+	if (data->mdmport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->at_tmp, data->modem_ready_id_inv);
 		data->modem_ready_id_inv = 0;
 		/*
@@ -1347,10 +1386,10 @@ static void gemalto_enable_mdm_cb(gboolean ok, GAtResult *result, gpointer user_
 		data->at_tmp=NULL;
 	}
 
+	data->mdmport = STATE_PRESENT;
 	g_at_chat_unregister(data->mdm, data->modem_ready_id);
 	data->modem_ready_id = 0;
 	data->trial_cmd_id = 0;
-
 	gemalto_initialize(modem);
 }
 
@@ -1360,46 +1399,52 @@ static int gemalto_enable_mdm(void *user_data)
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 	const char *mdm = NULL, *mdmInv = NULL;
 
-	if(data->hw_configuration&GEMALTO_CONFIG_MDM_PROBE_DIRECT)
+	if (data->mdmport==STATE_PROBE_DIRECT ||
+				data->mdmport==STATE_PROBE_DIRECT_INVERSE)
 		mdm = gemalto_get_string(modem, "Modem");
-	if(data->hw_configuration&GEMALTO_CONFIG_MDM_PROBE_INVERSE)
+
+	if (data->mdmport==STATE_PROBE_INVERSE ||
+				data->mdmport==STATE_PROBE_DIRECT_INVERSE)
 		mdmInv = gemalto_get_string(modem, "MdmBis");
 
 	DBG("%s, %s", mdm, mdmInv);
 
-	if(!mdm && !mdmInv)
+	if (!mdm && !mdmInv)
 		return gemalto_initialize(user_data);
 
-	if(mdm)
+	if (mdm)
 		data->mdm = open_device(mdm);
 
-	if(mdmInv)
+	if (mdmInv)
 		data->at_tmp = open_device(mdmInv);
 
-	if(!data->mdm && !data->at_tmp)
+	if (!data->mdm && !data->at_tmp)
 		return gemalto_initialize(user_data);
 
 	/* watchdog in case the mdm interface is not available */
-	data->probing_timer = g_timeout_add_seconds(data->init_waiting_time, gemalto_enable_mdm_fail, modem);
-	/* shorten the watchdog for the next attempt, when the system has certainly booted up */
+	data->probing_timer = g_timeout_add_seconds(data->init_waiting_time,
+						gemalto_enable_mdm_fail, modem);
+	/* shorten the watchdog for the next attempt (boot completed now) */
 	data->init_waiting_time = 3;
 
-	if(data->mdm) {
+	if (data->mdm) {
 		g_at_chat_set_debug(data->mdm, gemalto_debug, "Mdm: ");
 		/* Try the AT command. If it doesn't work, wait for ^SYSSTART */
-		data->modem_ready_id = g_at_chat_register(data->mdm, "^SYSSTART",
-					gemalto_enable_mdm_startup, FALSE, modem, NULL);
+		data->modem_ready_id = g_at_chat_register(data->mdm,
+			"^SYSSTART", gemalto_enable_mdm_startup, FALSE,
+			modem, NULL);
 		data->trial_cmd_id = g_at_chat_send(data->mdm, "AT",
-					none_prefix, gemalto_enable_mdm_cb, modem, NULL);
+			none_prefix, gemalto_enable_mdm_cb, modem, NULL);
 	}
 
-	if(data->at_tmp) {
+	if (data->at_tmp) {
 		g_at_chat_set_debug(data->at_tmp, gemalto_debug, "Mdm: ");
 		/* Try the AT command. If it doesn't work, wait for ^SYSSTART */
-		data->modem_ready_id_inv = g_at_chat_register(data->at_tmp, "^SYSSTART",
-					gemalto_enable_mdm_startup_inv, FALSE, modem, NULL);
+		data->modem_ready_id_inv = g_at_chat_register(data->at_tmp,
+			"^SYSSTART", gemalto_enable_mdm_startup_inv, FALSE,
+			modem, NULL);
 		data->trial_cmd_id_inv = g_at_chat_send(data->at_tmp, "AT",
-					none_prefix, gemalto_enable_mdm_cb_inv, modem, NULL);
+			none_prefix, gemalto_enable_mdm_cb_inv, modem, NULL);
 	}
 
 	return -EINPROGRESS;
@@ -1415,16 +1460,19 @@ static int gemalto_enable_app_fail(void *user_data)
 		data->probing_timer = 0; /* remove the timer reference */
 	}
 
-	data->hw_configuration &= ~GEMALTO_CONFIG_APP_PRESENT;
+	data->appport = STATE_ABSENT;
 
-	if (data->hw_configuration&GEMALTO_CONFIG_APP_PROBE_DIRECT) {
+	if (data->appport==STATE_PROBE_DIRECT ||
+				data->appport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->app, data->modem_ready_id);
 		data->modem_ready_id = 0;
 		closeport(data->app);
 		data->trial_cmd_id = 0;
 		data->app=NULL;
 	}
-	if (data->hw_configuration&GEMALTO_CONFIG_APP_PROBE_INVERSE) {
+
+	if (data->appport==STATE_PROBE_INVERSE ||
+				data->appport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->at_tmp, data->modem_ready_id_inv);
 		data->modem_ready_id_inv = 0;
 		closeport(data->at_tmp);
@@ -1436,7 +1484,8 @@ static int gemalto_enable_app_fail(void *user_data)
 	return FALSE;
 }
 
-static void gemalto_enable_app_startup_inv(GAtResult *result, gpointer user_data)
+static void gemalto_enable_app_startup_inv(GAtResult *result,
+							gpointer user_data)
 {
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
@@ -1447,15 +1496,16 @@ static void gemalto_enable_app_startup_inv(GAtResult *result, gpointer user_data
 		data->probing_timer = 0; /* remove the timer reference */
 	}
 
-	if (data->hw_configuration&GEMALTO_CONFIG_APP_PROBE_DIRECT) {
-		data->hw_configuration &= ~GEMALTO_CONFIG_APP_PROBE_DIRECT;
-		data->hw_configuration &= ~GEMALTO_CONFIG_MDM_PROBE_DIRECT;
+	if (data->appport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->app, data->modem_ready_id);
 		data->modem_ready_id = 0;
 		closeport(data->app);
 		data->trial_cmd_id = 0;
 		data->app=NULL;
 	}
+
+	if (data->mdmport==STATE_PROBE_DIRECT_INVERSE)
+		data->mdmport=STATE_PROBE_INVERSE;
 
 	data->modem_ready_id_inv = 0;
 	data->trial_cmd_id_inv = 0;
@@ -1470,7 +1520,10 @@ static void gemalto_enable_app_startup_inv(GAtResult *result, gpointer user_data
 
 	if (data->app) {
 		g_at_chat_set_debug(data->app, gemalto_debug, "App: ");
-		data->hw_configuration |= GEMALTO_CONFIG_APP_PRESENT;
+		data->appport = STATE_PRESENT;
+		data->inverse_enum=TRUE;
+	} else {
+		data->appport = STATE_ABSENT;
 	}
 
 	gemalto_enable_mdm(modem);
@@ -1487,15 +1540,16 @@ static void gemalto_enable_app_startup(GAtResult *result, gpointer user_data)
 		data->probing_timer = 0; /* remove the timer reference */
 	}
 
-	if (data->hw_configuration&GEMALTO_CONFIG_APP_PROBE_INVERSE) {
-		data->hw_configuration &= ~GEMALTO_CONFIG_APP_PROBE_INVERSE;
-		data->hw_configuration &= ~GEMALTO_CONFIG_MDM_PROBE_INVERSE;
+	if (data->appport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->at_tmp, data->modem_ready_id_inv);
 		data->modem_ready_id_inv = 0;
 		closeport(data->at_tmp);
 		data->trial_cmd_id_inv = 0;
 		data->at_tmp=NULL;
 	}
+
+	if (data->mdmport==STATE_PROBE_DIRECT_INVERSE)
+		data->mdmport=STATE_PROBE_DIRECT;
 
 	data->modem_ready_id = 0;
 	data->trial_cmd_id = 0;
@@ -1509,13 +1563,16 @@ static void gemalto_enable_app_startup(GAtResult *result, gpointer user_data)
 
 	if (data->app) {
 		g_at_chat_set_debug(data->app, gemalto_debug, "App: ");
-		data->hw_configuration |= GEMALTO_CONFIG_APP_PRESENT;
+		data->appport = STATE_PRESENT;
+	} else {
+		data->appport = STATE_ABSENT;
 	}
 
 	gemalto_enable_mdm(modem);
 }
 
-static void gemalto_enable_app_cb_inv(gboolean ok, GAtResult *result, gpointer user_data)
+static void gemalto_enable_app_cb_inv(gboolean ok, GAtResult *result,
+							gpointer user_data)
 {
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
@@ -1525,11 +1582,7 @@ static void gemalto_enable_app_cb_inv(gboolean ok, GAtResult *result, gpointer u
 		data->probing_timer = 0; /* remove the timer reference */
 	}
 
-	data->hw_configuration |= GEMALTO_CONFIG_APP_PRESENT;
-
-	if (data->hw_configuration&GEMALTO_CONFIG_APP_PROBE_DIRECT) {
-		data->hw_configuration &= ~GEMALTO_CONFIG_APP_PROBE_DIRECT;
-		data->hw_configuration &= ~GEMALTO_CONFIG_MDM_PROBE_DIRECT;
+	if (data->appport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->app, data->modem_ready_id);
 		data->modem_ready_id = 0;
 		closeport(data->app);
@@ -1537,16 +1590,21 @@ static void gemalto_enable_app_cb_inv(gboolean ok, GAtResult *result, gpointer u
 		data->app=NULL;
 	}
 
+	if (data->mdmport==STATE_PROBE_DIRECT_INVERSE)
+		data->mdmport=STATE_PROBE_INVERSE;
+
+	data->appport = STATE_PRESENT;
+	data->inverse_enum=TRUE;
 	g_at_chat_unregister(data->at_tmp, data->modem_ready_id_inv);
 	data->modem_ready_id_inv = 0;
 	data->trial_cmd_id_inv = 0;
-
 	data->app=data->at_tmp;
 	data->at_tmp=NULL;
 	gemalto_enable_mdm(modem);
 }
 
-static void gemalto_enable_app_cb(gboolean ok, GAtResult *result, gpointer user_data)
+static void gemalto_enable_app_cb(gboolean ok, GAtResult *result,
+							gpointer user_data)
 {
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
@@ -1556,11 +1614,7 @@ static void gemalto_enable_app_cb(gboolean ok, GAtResult *result, gpointer user_
 		data->probing_timer = 0; /* remove the timer reference */
 	}
 
-	data->hw_configuration |= GEMALTO_CONFIG_APP_PRESENT;
-
-	if (data->hw_configuration&GEMALTO_CONFIG_APP_PROBE_INVERSE) {
-		data->hw_configuration &= ~GEMALTO_CONFIG_APP_PROBE_INVERSE;
-		data->hw_configuration &= ~GEMALTO_CONFIG_MDM_PROBE_INVERSE;
+	if (data->appport==STATE_PROBE_DIRECT_INVERSE) {
 		g_at_chat_unregister(data->at_tmp, data->modem_ready_id_inv);
 		data->modem_ready_id_inv = 0;
 		closeport(data->at_tmp);
@@ -1568,10 +1622,13 @@ static void gemalto_enable_app_cb(gboolean ok, GAtResult *result, gpointer user_
 		data->at_tmp=NULL;
 	}
 
+	if (data->mdmport==STATE_PROBE_DIRECT_INVERSE)
+		data->mdmport=STATE_PROBE_DIRECT;
+
+	data->appport = STATE_PRESENT;
 	g_at_chat_unregister(data->app, data->modem_ready_id);
 	data->modem_ready_id = 0;
 	data->trial_cmd_id = 0;
-
 	gemalto_enable_mdm(modem);
 }
 
@@ -1582,9 +1639,11 @@ static int gemalto_enable_app(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	if(data->hw_configuration&GEMALTO_CONFIG_APP_PROBE_DIRECT)
+	if (data->appport==STATE_PROBE_DIRECT ||
+				data->appport==STATE_PROBE_DIRECT_INVERSE)
 		app = gemalto_get_string(modem, "Application");
-	if(data->hw_configuration&GEMALTO_CONFIG_APP_PROBE_INVERSE)
+	if (data->appport==STATE_PROBE_INVERSE ||
+				data->appport==STATE_PROBE_DIRECT_INVERSE)
 		appInv = gemalto_get_string(modem, "AppBis");
 
 	DBG("%s, %s", app, appInv);
@@ -1592,40 +1651,40 @@ static int gemalto_enable_app(struct ofono_modem *modem)
 	if (!app && !appInv)
 		return gemalto_enable_mdm(modem);
 
-	if(app)
+	if (app)
 		data->app = open_device(app);
-	if(appInv)
+	if (appInv)
 		data->at_tmp = open_device(appInv);
 
-	if(!data->app && !data->at_tmp)
+	if (!data->app && !data->at_tmp)
 		return gemalto_enable_mdm(modem);
 
 	/* watchdog in case the app interface is not available */
-	data->probing_timer = g_timeout_add_seconds(data->init_waiting_time, gemalto_enable_app_fail, modem);
-	/* shorten the watchdog for the next attempt, when the system has certainly booted up */
+	data->probing_timer = g_timeout_add_seconds(data->init_waiting_time,
+					gemalto_enable_app_fail, modem);
+	/* shorten the watchdog for the next attempt (boot time elapsed) */
 	data->init_waiting_time = 3;
 
-	if(data->app)
+	if (data->app) {
 		DBG("attempting DIRECT enum");
-	if(data->at_tmp)
-		DBG("attempting INVERSE enum");
-
-	if(data->app) {
 		g_at_chat_set_debug(data->app, gemalto_debug, "App: ");
 		/* Try the AT command. If it doesn't work, wait for ^SYSSTART */
-		data->modem_ready_id = g_at_chat_register(data->app, "^SYSSTART",
-					gemalto_enable_app_startup, FALSE, modem, NULL);
+		data->modem_ready_id = g_at_chat_register(data->app,
+			"^SYSSTART", gemalto_enable_app_startup, FALSE, modem,
+			NULL);
 		data->trial_cmd_id = g_at_chat_send(data->app, "AT",
-					none_prefix, gemalto_enable_app_cb, modem, NULL);
+			none_prefix, gemalto_enable_app_cb, modem, NULL);
 	}
 
-	if(data->at_tmp) {
+	if (data->at_tmp) {
+		DBG("attempting INVERSE enum");
 		g_at_chat_set_debug(data->at_tmp, gemalto_debug, "App: ");
 		/* Try the AT command. If it doesn't work, wait for ^SYSSTART */
-		data->modem_ready_id_inv = g_at_chat_register(data->at_tmp, "^SYSSTART",
-					gemalto_enable_app_startup_inv, FALSE, modem, NULL);
+		data->modem_ready_id_inv = g_at_chat_register(data->at_tmp,
+			"^SYSSTART", gemalto_enable_app_startup_inv, FALSE,
+			modem, NULL);
 		data->trial_cmd_id_inv = g_at_chat_send(data->at_tmp, "AT",
-					none_prefix, gemalto_enable_app_cb_inv, modem, NULL);
+			none_prefix, gemalto_enable_app_cb_inv, modem, NULL);
 	}
 
 	return -EINPROGRESS;
@@ -1696,32 +1755,39 @@ static void mbim_device_caps_info_cb(struct mbim_message *message, void *user)
 
 	if (mbim_device_send(md->device, 0, message,
 				NULL, NULL, NULL)) {
-		md->hw_configuration |= GEMALTO_CONFIG_MBIM_PRESENT;
-		gemalto_enable_app(modem);  /* continue with the other interfaces */
-		return;
+		md->mbim=STATE_PRESENT;
+		goto other_devices;
 	}
 
 
 error:
 	mbim_device_shutdown(md->device);
-	gemalto_enable_app(modem);  /* continue with the other interfaces */
+
+other_devices:
+
+	if (md->init_done)
+		return;
+
+	gemalto_enable_app(modem);  /* continue with mdm interface */
 }
 
-static void mbim_device_closed(void *user_data)
+static void mbim_device_closed_startup(void *user_data)
 {
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *md = ofono_modem_get_data(modem);
 
-	if(!md) return;
-	if(!md->device) return;
+	if (!md) return;
 
-	if(!(md->hw_configuration&GEMALTO_CONFIG_MBIM_TESTING)) { /* means we have failed the MBIM_OPEN */
-		md->hw_configuration |= GEMALTO_CONFIG_MBIM_TESTING; // change state because the function is called twice -> closing flag
+	if (!md->device) return;
+
+	if (md->mbim!=STATE_TESTING) { /* means we have failed the MBIM_OPEN */
+		/* the function is called twice, so we trace with a state */
 		DBG(REDCOLOR"MBIM OPEN failed!"NOCOLOR);
-	} else if(md->hw_configuration&GEMALTO_CONFIG_MBIM_TESTING) { /* process the second call! */
-		md->hw_configuration &= ~GEMALTO_CONFIG_MBIM_TESTING; // change state because the function is called twice
-		DBG(REDCOLOR"MBIM OPEN failed!"NOCOLOR);
-		gemalto_enable_app(modem); /* continue with the other interfaces */
+		md->mbim=STATE_TESTING;
+	} else if (md->mbim==STATE_TESTING) { /* process second/regular call */
+		DBG("MBIM OPEN failed!");
+		md->mbim=STATE_PROBE; /* reset for future attempt */
+		gemalto_enable_app(modem); /* continue with other interfaces */
 	}
 
 	mbim_device_unref(md->device);
@@ -1751,12 +1817,13 @@ static int mbim_enable(struct ofono_modem *modem)
 
 	device = gemalto_get_string(modem, "NetworkControl");
 	if (!device)
-		return gemalto_enable_app(modem);
+		goto other_devices;
 
 	DBG("modem device: %s", device);
 	fd = open(device, O_EXCL | O_NONBLOCK | O_RDWR);
+
 	if (fd < 0)
-		return gemalto_enable_app(modem);
+		goto other_devices;
 
 	DBG("device: %s opened successfully", device);
 	md->device = mbim_device_new(fd, md->max_segment);
@@ -1766,11 +1833,23 @@ static int mbim_enable(struct ofono_modem *modem)
 	mbim_device_set_max_outstanding(md->device, md->max_outstanding);
 	mbim_device_set_ready_handler(md->device,
 					mbim_device_ready, modem, NULL);
-	mbim_device_set_disconnect_handler(md->device,
-					mbim_device_closed, modem, NULL);
+	if (md->init_done)
+		mbim_device_set_disconnect_handler(md->device,
+				mbim_device_closed, modem, NULL);
+	else
+		mbim_device_set_disconnect_handler(md->device,
+				mbim_device_closed_startup, modem, NULL);
+
 	mbim_device_set_debug(md->device, gemalto_debug, "MBIM:", NULL);
 
 	return -EINPROGRESS;
+
+other_devices:
+
+	if (md->init_done)
+		return 0;
+
+	return gemalto_enable_app(modem);
 }
 #endif
 
@@ -1778,8 +1857,8 @@ static void qmi_enable_cb(void *user_data)
 {
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *md = ofono_modem_get_data(modem);
-	md->hw_configuration |= GEMALTO_CONFIG_QMI_PRESENT;
-	gemalto_enable_app(modem); /* qmi succeeded. now continue with other interfaces */
+	md->qmi = STATE_PRESENT;
+	gemalto_enable_app(modem); /* qmi done, continue with app interface */
 }
 
 static int qmi_enable(struct ofono_modem *modem)
@@ -1825,34 +1904,41 @@ static int gemalto_enable(struct ofono_modem *modem)
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 
 	guint m=0;
-	guint hwc=0, swc=0;
 
 	DBG("modem struct: %p, gemalto_data: %p", modem, data);
 
-	if(!modem || !data)
+	if (!modem || !data)
 		return -EINVAL;
 
 	if (data->init_done) {
 		g_at_chat_send(data->app, "AT+CFUN=4", none_prefix, cfun_enable,
 								modem, NULL);
+
+#ifdef HAVE_ELL
+		if (data->mbim != STATE_ABSENT)
+			mbim_enable(modem);
+#endif
+
 		return -EINPROGRESS;
 	}
 
 
-	data->conn_type = g_str_equal(conn_type,"Serial") ? GEMALTO_CONNECTION_TYPE_SERIAL : GEMALTO_CONNECTION_TYPE_USB;
+	data->conn = g_str_equal(conn_type,"Serial") ? GEMALTO_CONNECTION_SERIAL
+						: GEMALTO_CONNECTION_USB;
 
-	if(model) {
+	if (model) {
 		data->model = strtoul(model, NULL, 16);
 		m=data->model;
 	}
 
-	if (m==0xa0) { /* single ACM interface modules: remove extra devices, but enumerated as 02 */
+	/* single ACM interface 02: assign application to modem */
+	if (m==0xa0) {
 		const char *app = gemalto_get_string(modem, "Application");
 		ofono_modem_set_string(modem, "Modem", app);
 	}
 
+	/* if single ACM interface, remove possible extra devices */
 	if (m==0x58 || m==0x47 || m==0x54 || m==0xa0) {
-		/* the first 3 are !null only for 0x58*/
 		ofono_modem_set_string(modem, "Application", NULL);
 		ofono_modem_set_string(modem, "GNSS", NULL);
 		ofono_modem_set_string(modem, "RSA", NULL);
@@ -1860,58 +1946,67 @@ static int gemalto_enable(struct ofono_modem *modem)
 		ofono_modem_set_string(modem, "AppBis", NULL);
 		ofono_modem_set_string(modem, "GNSSBis", NULL);
 		ofono_modem_set_string(modem, "RSABis", NULL);
-		hwc &= ~GEMALTO_CONFIG_APP_PROBE_DIRECT;
-		hwc |= GEMALTO_CONFIG_MDM_PROBE_DIRECT;
+		data->appport = STATE_ABSENT;
+		data->mdmport = STATE_PROBE_DIRECT;
 	} else {
-		if (m==0x53 || m==0x60 || m==0x55) {
-			hwc |= GEMALTO_CONFIG_MDM_PROBE_INVERSE;
-			hwc |= GEMALTO_CONFIG_APP_PROBE_INVERSE;
-		}
-		if (m!=0x53 && m!=0x60) { /* 0x55 in both sets! */
-			hwc |= GEMALTO_CONFIG_MDM_PROBE_DIRECT;
-			hwc |= GEMALTO_CONFIG_APP_PROBE_DIRECT;
+		if (m==0x55) {
+			data->appport = STATE_PROBE_DIRECT_INVERSE;
+			data->mdmport = STATE_PROBE_DIRECT_INVERSE;
+		} else if (m==0x53 || m==0x60) {
+			data->appport = STATE_PROBE_INVERSE;
+			data->mdmport = STATE_PROBE_INVERSE;
+		} else {
+			data->appport = STATE_PROBE_DIRECT;
+			data->mdmport = STATE_PROBE_DIRECT;
 		}
 	}
 
 	/* pre-configure network interfaces */
 	if (m==0x62 || m==0x5d || m==0x65) {
 #ifdef HAVE_ELL
-		hwc |= GEMALTO_CONFIG_MBIM_PROBE;
+		data->mbim = STATE_PROBE;
 #endif
+	} else {
+		/*
+		 * note: we probe for ECM/NCM even if the port is not present
+		 * (for serial connection type or serial-like)
+		 */
+		if (m==0x53 || m==0x60 || m==0x63)
+			data->qmi=STATE_PROBE;
+		/*these families have PPP only*/
+		else if (m!=0x58 && m!=0x47 && m!=0x54)
+			data->ecmncm = STATE_PROBE;
 	}
-	else
-	     if (m==0x53 || m==0x60 || m==0x63)
-		hwc |= GEMALTO_CONFIG_QMI_PROBE;
-	else if (m!=0x58 && m!=0x47 && m!=0x54) /*these families have PPP only*/
-		hwc |= GEMALTO_CONFIG_ECMNCM_PROBE;
 
 	/* pre-configure SW features */
 	if (m==0xa0) {
-		swc |= GEMALTO_COMMAND_CTX3_AVAIL;
-		hwc &= ~GEMALTO_CONFIG_ECMNCM_PROBE;
+		data->gprs_opt=USE_CTX3;
+		data->ecmncm = STATE_ABSENT;
 	}
 	if (m==0x63 || m==0x65 || m==0x5b || m==0x5c || m==0x5d)
-		swc |= GEMALTO_GINA;
+		data->gina=STATE_PRESENT;
 
 	data->init_waiting_time = 30;
 
 	if (m==0x55)
 		data->init_waiting_time = 5;
 
-	data->hw_configuration=hwc;
-	data->sw_configuration=swc;
-
 #ifdef HAVE_ELL
-	if((data->hw_configuration&GEMALTO_CONFIG_MBIM_PROBE) && ctl && net) {
+	if ((data->mbim==STATE_PROBE) && ctl && net) {
 		data->init_waiting_time = 3;
 		return mbim_enable(modem);
 	}
 #endif
 
-	if((data->hw_configuration&GEMALTO_CONFIG_QMI_PROBE) && ctl && net) {
+	if ((data->qmi==STATE_PROBE) && ctl && net) {
 		data->init_waiting_time = 10;
 		return qmi_enable(modem);
 	}
+
+	data->vts_with_quotes = TRUE;
+
+	if (m==0x5b || m==0x5c || m==0x5d || m==0xa0)
+		data->vts_with_quotes = FALSE;
 
 	return gemalto_enable_app(modem);
 }
@@ -1995,9 +2090,11 @@ static void gemalto_pre_sim(struct ofono_modem *modem)
 	 * add the voice support as soon as possible.
 	 */
 
-	if (data->sw_configuration&GEMALTO_COMMAND_VOICE_AVAIL)
-		// TODO: create a gemalto voicecall atom instead
-		ofono_voicecall_create(modem, 0, "atmodem", data->app);
+	if (data->voice_avail) {
+		ofono_modem_set_integer(modem, "Gemalto_VTS_quotes",
+						data->vts_with_quotes);
+		ofono_voicecall_create(modem, 0, "gemaltomodem", data->app);
+	}
 
 	data->sim = ofono_sim_create(modem, OFONO_VENDOR_GEMALTO,
 		"atmodem", data->app);
@@ -2011,43 +2108,35 @@ static void gemalto_post_sim(struct ofono_modem *modem)
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 
 #ifdef HAVE_ELL
-	if (data->hw_configuration&GEMALTO_CONFIG_MBIM_PRESENT) {
+	if (data->mbim==STATE_PRESENT) {
 		/* very important to set the interface ready */
 		mbim_sim_probe(data->device);
 	}
 #endif
 
 	ofono_phonebook_create(modem, 0, "atmodem", data->app);
-
-	if(data->sw_configuration&GEMALTO_CONFIG_SGAUTH_SYNTAX)
-		ofono_lte_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
-								data->app);
-	else
-		ofono_lte_create(modem, OFONO_VENDOR_GEMALTO_CGAUTH, "atmodem",
-								data->app);
-}
-
-static void swwan_probe(gboolean ok, GAtResult *result, gpointer user_data)
-{
-	struct gemalto_data *data = ofono_modem_get_data(user_data);
-
-	if(ok)
-		data->sw_configuration |= GEMALTO_COMMAND_SWWAN_AVAIL;
-	else
-		data->sw_configuration &= ~GEMALTO_COMMAND_SWWAN_AVAIL;
+	ofono_modem_set_integer(modem, "Gemalto_Auth", data->auth_syntax);
+	ofono_lte_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
 }
 
 static void cgdcont17_probe(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct gemalto_data *data = ofono_modem_get_data(user_data);
 
-	if(ok)
-		data->sw_configuration |= GEMALTO_COMMAND_CTX17_AVAIL;
-	else
-		data->sw_configuration &= ~GEMALTO_COMMAND_CTX17_AVAIL;
+	if (ok)
+		data->gprs_opt = USE_CTX17;
 }
 
-static void autoattach_probe_and_continue(gboolean ok, GAtResult *result, gpointer user_data)
+static void swwan_probe(gboolean ok, GAtResult *result, gpointer user_data)
+{
+	struct gemalto_data *data = ofono_modem_get_data(user_data);
+
+	if (ok)
+		data->gprs_opt = USE_SWWAN;
+}
+
+static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
+							gpointer user_data)
 {
 	struct ofono_modem* modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
@@ -2056,50 +2145,49 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result, gpoint
 	struct ofono_gprs *gprs=NULL;
 	struct ofono_gprs_context *gc=NULL;
 
-	data->sw_configuration &= ~GEMALTO_CONFIG_AUTOATTACH_ENABLED;
+	data->autoattach=FALSE;
+	ofono_modem_set_integer(modem, "Gto_Autoattach", 0);
 
-	if(ok) {
+	if (ok) {
 		g_at_result_iter_init(&iter, result);
 		while (g_at_result_iter_next(&iter, NULL)) {
-			if(strstr(g_at_result_iter_raw_line(&iter),
-					"\"enabled\""))
-				data->sw_configuration |=
-					GEMALTO_CONFIG_AUTOATTACH_ENABLED;
+			if (strstr(g_at_result_iter_raw_line(&iter),
+					"\"enabled\"")) {
+				data->autoattach=TRUE;
+				ofono_modem_set_integer(modem, "Gto_Autoattach",
+									1);
+
+			}
 		}
 	}
 
 #ifdef HAVE_ELL
-	if (data->hw_configuration&GEMALTO_CONFIG_MBIM_PRESENT) {
-		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
+	if (data->mbim==STATE_PRESENT) {
+		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
+								data->app);
 		ofono_gprs_set_cid_range(gprs, 0, data->max_sessions);
 		gc = ofono_gprs_context_create(modem, 0, "mbim", data->device);
 	} else
 #endif
-		if (data->hw_configuration&GEMALTO_CONFIG_QMI_PRESENT) {
-		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
+		if (data->qmi==STATE_PRESENT) {
+		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
+								data->app);
 		ofono_gprs_set_cid_range(gprs, 4, 16);
-		gc = ofono_gprs_context_create(modem, 0, "qmimodem", data->device);
-	} else if (data->sw_configuration&GEMALTO_COMMAND_SWWAN_AVAIL ) {
-		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
+		gc = ofono_gprs_context_create(modem, 0, "qmimodem",
+								data->device);
+	} else if (data->gprs_opt==USE_SWWAN || data->gprs_opt==USE_CTX17 ||
+						data->gprs_opt==USE_CTX3) {
+		ofono_modem_set_integer(modem, "Gemalto_WWAN",
+						data->gprs_opt==USE_SWWAN);
+		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
+								data->app);
 		ofono_gprs_set_cid_range(gprs, 4, 16);
-		if(data->sw_configuration&GEMALTO_CONFIG_SGAUTH_SYNTAX)
-			gc = ofono_gprs_context_create(modem, GEMALTO_SWWAN_SGAUTH, "gemaltowwanmodem", data->app);
-		else
-			gc = ofono_gprs_context_create(modem, GEMALTO_SWWAN, "gemaltowwanmodem", data->app);
-	} else if (data->sw_configuration&GEMALTO_COMMAND_CTX17_AVAIL ) {
-		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
-		ofono_gprs_set_cid_range(gprs, 17, 17);
-		if(data->sw_configuration&GEMALTO_CONFIG_SGAUTH_SYNTAX)
-			gc = ofono_gprs_context_create(modem, GEMALTO_SGAUTH, "gemaltowwanmodem", data->app);
-		else
-			gc = ofono_gprs_context_create(modem, GEMALTO_GENERIC, "gemaltowwanmodem", data->app);
-	} else if (data->sw_configuration&GEMALTO_COMMAND_CTX3_AVAIL ) {
-		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
-		ofono_gprs_set_cid_range(gprs, 3, 7);
-		gc = ofono_gprs_context_create(modem, GEMALTO_GENERIC, "gemaltowwanmodem", data->app);
-	} else if (data->sw_configuration&GEMALTO_COMMAND_PPP_AVAIL) {
+		gc = ofono_gprs_context_create(modem, 0, "gemaltowwanmodem",
+								data->app);
+	} else if (data->gprs_opt==USE_PPP) {
 		/* plain PPP only works from mdm ports */
-		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
+		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
+								data->app);
 		ofono_gprs_set_cid_range(gprs, 4, 16);
 		gc = ofono_gprs_context_create(modem, 0, "atmodem", data->mdm);
 	} /*
@@ -2109,7 +2197,8 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result, gpoint
 	   */
 
 	if (gc)
-		ofono_gprs_context_set_type(gc, OFONO_GPRS_CONTEXT_TYPE_INTERNET);
+		ofono_gprs_context_set_type(gc,
+					OFONO_GPRS_CONTEXT_TYPE_INTERNET);
 
 	if (gprs && gc)
 		ofono_gprs_add_context(gprs, gc);
@@ -2117,14 +2206,15 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result, gpoint
 	/* might have also without voicecall support  */
 	ofono_ussd_create(modem, 0, "atmodem", data->app);
 
-	if (data->sw_configuration&GEMALTO_COMMAND_VOICE_AVAIL) {
+	if (data->voice_avail) {
 		ofono_call_forwarding_create(modem, 0, "atmodem", data->app);
 		ofono_call_settings_create(modem, 0, "atmodem", data->app);
 		ofono_call_meter_create(modem, 0, "atmodem", data->app);
 		ofono_call_barring_create(modem, 0, "atmodem", data->app);
 	}
 
-	ofono_sms_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app); /* here because gemalto module require to be online to send at+cnmi */
+	/* modules require to be online to accept at+cnmi */
+	ofono_sms_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
 	mw = ofono_message_waiting_create(modem);
 
 	if (mw)
@@ -2147,11 +2237,17 @@ static int gemalto_post_online_delayed(void *modem)
 	 * proceeding with the next. So continuing on the last AT command is all
 	 * it takes
 	 */
-	if (data->hw_configuration&GEMALTO_CONFIG_ECMNCM_PROBE) {
-		g_at_chat_send(data->app, "AT^SWWAN?", NULL, swwan_probe, modem, NULL);
-		g_at_chat_send(data->app, "AT+CGDCONT=17", NULL, cgdcont17_probe, modem, NULL);
+
+	if (data->ecmncm == STATE_PROBE) {
+		data->gprs_opt = USE_PPP; /* fallback */
+		g_at_chat_send(data->app, "AT+CGDCONT=17", NULL,
+						cgdcont17_probe, modem, NULL);
+		g_at_chat_send(data->app, "AT^SWWAN?", NULL, swwan_probe, modem,
+									NULL);
 	}
-	g_at_chat_send(data->app, "AT^SCFG=\"GPRS/AutoAttach\"", NULL, autoattach_probe_and_continue, modem, NULL);
+
+	g_at_chat_send(data->app, "AT^SCFG=\"GPRS/AutoAttach\"", NULL,
+				autoattach_probe_and_continue, modem, NULL);
 
 	return FALSE; /* to kill the timer */
 }
@@ -2226,11 +2322,11 @@ static void gemalto_shutdown(struct ofono_modem *modem)
 		return;
 
 #ifdef HAVE_ELL
-	if (data->hw_configuration&GEMALTO_CONFIG_MBIM_PRESENT) {
+	if (data->mbim==STATE_PRESENT) {
 		mbim_device_shutdown(data->device);
 	}
 #endif
-	if (data->hw_configuration&GEMALTO_CONFIG_QMI_PRESENT) {
+	if (data->qmi==STATE_PRESENT) {
 		qmi_device_unref(data->device);
 	}
 
@@ -2239,7 +2335,7 @@ static void gemalto_shutdown(struct ofono_modem *modem)
 		g_at_chat_unregister_all(data->app);
 	}
 
-	if(conn && path) {
+	if (conn && path) {
 		if (g_dbus_unregister_interface(conn, path,
 					HARDWARE_MONITOR_INTERFACE))
 			ofono_modem_remove_interface(modem,
@@ -2260,27 +2356,55 @@ static void gemalto_shutdown(struct ofono_modem *modem)
 	lratom = __ofono_modem_find_atom(modem,
 					OFONO_ATOM_TYPE_LOCATION_REPORTING);
 
-	if(lratom)
+	if (lratom)
 		__ofono_atom_free(lratom);
 
 	/* Shutdown the modem */
-	if(data->app)
+	if (data->app)
 		g_at_chat_send(data->app, "AT^SMSO", none_prefix,
 						gemalto_smso_cb, modem, NULL);
 }
 
+#ifdef HAVE_ELL
+static void mbim_radio_off_for_disable(struct mbim_message *message, void *user)
+{
+	struct ofono_modem *modem = user;
+	struct gemalto_data *md = ofono_modem_get_data(modem);
+
+	DBG("%p", modem);
+
+	mbim_device_shutdown(md->device);
+}
+#endif
+
 static int gemalto_disable(struct ofono_modem *modem)
 {
 	struct gemalto_data *data = ofono_modem_get_data(modem);
+
+#ifdef HAVE_ELL
+	struct mbim_message *message;
+
+	if (data->mbim != STATE_ABSENT) {
+		message = mbim_message_new(mbim_uuid_basic_connect,
+						MBIM_CID_RADIO_STATE,
+						MBIM_COMMAND_TYPE_SET);
+		mbim_message_set_arguments(message, "u", 0);
+
+		if (mbim_device_send(data->device, 0, message,
+				mbim_radio_off_for_disable, modem, NULL)==0)
+			mbim_device_closed(modem);
+	}
+#endif
 
 	DBG("%p", modem);
 
 	if (data->app == NULL)
 		return 0;
 
-	g_at_chat_send(data->app, "AT+CFUN=4", none_prefix, gemalto_cfun_disable_cb, modem, NULL);
-	/* TODO: check when need to use another mode */
-	// g_at_chat_send(chat, "AT+CFUN=7", NULL, NULL, NULL, NULL); // for older intel modules
+	g_at_chat_send(data->app, "AT+CFUN=4", none_prefix,
+					gemalto_cfun_disable_cb, modem, NULL);
+	// TODO: check when need to use another mode:
+	// g_at_chat_send(chat, "AT+CFUN=7", NULL, NULL, NULL, NULL);
 
 	return -EINPROGRESS;
 }
@@ -2296,7 +2420,7 @@ static void powersave_stored_exec(struct ofono_modem *modem, ofono_bool_t enable
 	char key[32];
 	GKeyFile *f;
 
-	if(enable)
+	if (enable)
 		sprintf(store,"%s-%s/power_mode_powersave", vid, pid);
 	else
 		sprintf(store,"%s-%s/power_mode_normal", vid, pid);
@@ -2310,10 +2434,10 @@ static void powersave_stored_exec(struct ofono_modem *modem, ofono_bool_t enable
 		sprintf(key, "command_%d", index);
 		command = g_key_file_get_string(f, "Simple", key, NULL);
 
-		if(!command)
+		if (!command)
 			break;
 
-		DBG(REDCOLOR"executing stored command simple: %s"NOCOLOR, command);
+		DBG("executing stored command simple: %s", command);
 		g_at_chat_send(data->app, command, NULL, NULL, NULL, NULL);
 	}
 
@@ -2325,7 +2449,7 @@ static void powersave_stored_exec(struct ofono_modem *modem, ofono_bool_t enable
 		sprintf(key, "argument_%d", index);
 		argument = g_key_file_get_string(f, "WithPrompt", key, NULL);
 
-		if(!command || !prompt || !argument)
+		if (!command || !prompt || !argument)
 			break;
 
 		DBG("executing stored command with prompt: %s", command);
@@ -2351,7 +2475,7 @@ static void gemalto_powersave(struct ofono_modem *modem, ofono_bool_t enable)
 
 	powersave_stored_exec(modem, enable);
 
-	if(enable)
+	if (enable)
 		cbd->user = modem; /* doesn't matter, just checked for !=NULL */
 
 	g_at_chat_send(data->app, "AT", none_prefix,
