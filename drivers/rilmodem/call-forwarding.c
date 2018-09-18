@@ -38,7 +38,7 @@
 #include <ofono/call-forwarding.h>
 #include "common.h"
 
-#pragma GCC diagnostic ignored "-Wrestrict"
+//#pragma GCC diagnostic ignored "-Wrestrict"
 
 #include "gril.h"
 

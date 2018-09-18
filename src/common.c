@@ -3,6 +3,7 @@
  *  oFono - Open Source Telephony
  *
  *  Copyright (C) 2008-2011  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2018 Gemalto M2M
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -764,4 +765,22 @@ const char *call_status_to_string(enum call_status status)
 	}
 
 	return "unknown";
+}
+
+int get_auth_type_from_str(const char *auth_type) 
+{
+
+	if (g_str_equal(auth_type,"")) {
+		return 0;
+	}
+
+	if (g_str_equal(auth_type, "pap")) {
+		return 1;
+	}
+
+	if (g_str_equal(auth_type, "chap")) {
+		return 2;
+	}
+
+	return -1;
 }

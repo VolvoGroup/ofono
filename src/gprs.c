@@ -261,6 +261,8 @@ static const char *gprs_auth_method_to_string(enum ofono_gprs_auth_method auth)
 		return "chap";
 	case OFONO_GPRS_AUTH_METHOD_PAP:
 		return "pap";
+	default:
+		return NULL;
 	};
 
 	return NULL;
@@ -1008,7 +1010,7 @@ static void pri_read_settings_callback(const struct ofono_error *error,
 
 	value = pri_ctx->active;
 
-	gprs->flags &= !GPRS_FLAG_ATTACHING;
+	gprs->flags &= ~GPRS_FLAG_ATTACHING;
 
 	gprs->driver_attached = TRUE;
 	gprs_set_attached_property(gprs, TRUE);
@@ -1635,6 +1637,9 @@ static void release_active_contexts(struct ofono_gprs *gprs)
 
 		if (gc->driver->detach_shutdown != NULL)
 			gc->driver->detach_shutdown(gc, ctx->context.cid);
+
+		/* Make sure the context is properly cleared */
+		release_context(ctx);
 	}
 }
 
@@ -2234,6 +2239,7 @@ static DBusMessage *gprs_remove_context(DBusConnection *conn,
 	}
 
 	DBG("Unregistering context: %s", ctx->path);
+	release_context(ctx);
 	context_dbus_unregister(ctx);
 	gprs->contexts = g_slist_remove(gprs->contexts, ctx);
 

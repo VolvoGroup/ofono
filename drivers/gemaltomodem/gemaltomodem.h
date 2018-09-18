@@ -19,7 +19,24 @@
  *
  */
 
-#include <drivers/atmodem/atutil.h>
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
+#include <glib.h>
+#include <gatchat.h>
+
+#define OFONO_API_SUBJECT_TO_CHANGE
+#include <ofono/plugin.h>
+#include <ofono/types.h>
+
+#include <drivers/atmodem/atmodem.h>
 
 extern void gemalto_location_reporting_init();
 extern void gemalto_location_reporting_exit();
+
+extern void gemaltowwan_gprs_context_init();
+extern void gemaltowwan_gprs_context_exit();
+
+extern void gemalto_voicecall_init();
+extern void gemalto_voicecall_exit();

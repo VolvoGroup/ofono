@@ -75,6 +75,8 @@ static uint32_t auth_method_to_auth_protocol(enum ofono_gprs_auth_method method)
 		return 2; /* MBIMAuthProtocolChap */
 	case OFONO_GPRS_AUTH_METHOD_PAP:
 		return 1; /* MBIMAuthProtocolPap */
+	default:
+		return 0;
 	}
 
 	return 0;

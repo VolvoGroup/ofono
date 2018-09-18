@@ -397,6 +397,8 @@ builtin_modules += gemaltomodem
 builtin_sources += drivers/atmodem/atutil.h \
 			drivers/gemaltomodem/gemaltomodem.h \
 			drivers/gemaltomodem/gemaltomodem.c \
+			drivers/gemaltomodem/gprs-context-wwan.c \
+			drivers/gemaltomodem/voicecall.c \
 			drivers/gemaltomodem/location-reporting.c
 
 builtin_modules += xmm7modem
@@ -855,9 +857,12 @@ unit_tests += unit/test-mbim
 endif
 endif
 
-
+if TEST
 noinst_PROGRAMS = $(unit_tests) \
 			unit/test-sms-root unit/test-mux unit/test-caif
+else
+noinst_PROGRAMS =
+endif
 
 unit_test_common_SOURCES = unit/test-common.c src/common.c src/util.c
 unit_test_common_LDADD = @GLIB_LIBS@
@@ -1013,7 +1018,9 @@ endif
 endif
 endif
 
+if TEST
 noinst_PROGRAMS += gatchat/gsmdial gatchat/test-server gatchat/test-qcdm
+endif
 
 gatchat_gsmdial_SOURCES = gatchat/gsmdial.c $(gatchat_sources)
 gatchat_gsmdial_LDADD = @GLIB_LIBS@

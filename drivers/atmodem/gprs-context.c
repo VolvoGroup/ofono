@@ -304,6 +304,9 @@ static void at_gprs_activate_primary(struct ofono_gprs_context *gc,
 				snprintf(buf + len, sizeof(buf) - len - 3,
 						",\"PAP:%s\"", ctx->apn);
 				break;
+			case OFONO_GPRS_AUTH_METHOD_NONE:
+			default:
+				break;
 			}
 			break;
 		default:

@@ -463,7 +463,6 @@ static void at_answer(struct ofono_voicecall *vc,
 static void at_hangup(struct ofono_voicecall *vc,
 			ofono_voicecall_cb_t cb, void *data)
 {
-	/* Hangup active call */
 	at_template("AT+CHUP", vc, generic_cb, 0x3f, cb, data);
 }
 
