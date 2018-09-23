@@ -781,9 +781,6 @@ static bool open_read_handler(struct l_io *io, void *user_data)
 	/* Grab OPEN_DONE Status field */
 	if (l_get_le32(buf) != 0) {
 		close(fd);
-		if (device->disconnect_handler)
-			device->disconnect_handler(device->ready_data);
-		device->is_ready = false;
 		return false;
 	}
 

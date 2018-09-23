@@ -21,7 +21,6 @@
 #include <config.h>
 #endif
 
-#define _GNU_SOURCE
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -66,112 +65,6 @@ struct gprs_context_data {
 	int use_wwan;
 };
 
-static gboolean gemalto_get_auth_command(struct ofono_modem *modem, int cid,
-				enum ofono_gprs_auth_method auth_method,
-				const char *username, const char *password,
-				char *buf, guint buflen)
-{
-	int gto_auth = ofono_modem_get_integer(modem, "Gemalto_Auth");
-	int len;
-	/*
-	 * 0: use cgauth
-	 * 1: use sgauth(pwd, user)
-	 * 2: use sgauth(user, pwd)
-	 */
-
-	int auth_type;
-
-	switch (auth_method) {
-	case OFONO_GPRS_AUTH_METHOD_PAP:
-		auth_type=1;
-		break;
-	case OFONO_GPRS_AUTH_METHOD_CHAP:
-		auth_type=2;
-		break;
-	case OFONO_GPRS_AUTH_METHOD_NONE:
-	default:
-		auth_type=0;
-		break;
-	}
-
-	if (auth_type != 0 && (!*username || !*password))
-		return FALSE;
-
-	switch (gto_auth) {
-	case 1:
-	case 2:
-		len = snprintf(buf, buflen, "AT^SGAUTH=%d", cid);
-		break;
-	case 0:
-	default:
-		len = snprintf(buf, buflen, "AT+CGAUTH=%d", cid);
-		break;
-	}
-
-	buflen -= len;
-
-	switch(auth_type) {
-	case 0:
-
-		switch (gto_auth) {
-		case 2:
-			snprintf(buf+len, buflen, ",0,\"\",\"\"");
-			break;
-		case 0:
-		case 1:
-		default:
-			snprintf(buf+len, buflen, ",0");
-			break;
-		}
-		break;
-
-	case 1:
-	case 2:
-
-		switch (gto_auth) {
-		case 1:
-			snprintf(buf+len, buflen, ",%d,\"%s\",\"%s\"",
-					auth_type, password, username);
-			break;
-		case 0:
-		case 2:
-		default:
-			snprintf(buf+len, buflen, ",%d,\"%s\",\"%s\"",
-					auth_type, username, password);
-		}
-		break;
-
-	default:
-		return FALSE;
-	}
-
-	return TRUE;
-}
-
-static void gemalto_get_cgdcont_command(struct ofono_modem *modem,
-			guint cid, enum ofono_gprs_proto proto, const char *apn,
-							char *buf, guint buflen)
-{
-	int len = snprintf(buf, buflen, "AT+CGDCONT=%u", cid);
-	buflen-=len;
-
-	if(!apn) /* it will remove the context */
-		return;
-
-	switch (proto) {
-	case OFONO_GPRS_PROTO_IPV6:
-		snprintf(buf+len, buflen, ",\"IPV6\",\"%s\"", apn);
-		break;
-	case OFONO_GPRS_PROTO_IPV4V6:
-		snprintf(buf+len, buflen, ",\"IPV4V6\",\"%s\"", apn);
-		break;
-	case OFONO_GPRS_PROTO_IP:
-	default:
-		snprintf(buf+len, buflen, ",\"IP\",\"%s\"", apn);
-		break;
-	}
-}
-
 static void failed_setup(struct ofono_gprs_context *gc,
 				GAtResult *result, gboolean deactivate)
 {
@@ -183,7 +76,7 @@ static void failed_setup(struct ofono_gprs_context *gc,
 
 	if (deactivate == TRUE) {
 
-		if(gcd->use_wwan)
+		if (gcd->use_wwan)
 			sprintf(buf, "AT^SWWAN=0,%u", gcd->active_context);
 		else
 			sprintf(buf, "AT+CGACT=0,%u", gcd->active_context);
@@ -213,7 +106,7 @@ static void activate_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	if (!ok) {
 		ofono_error("Unable activate context");
 		/*
-		 * We've reported sucess already, so can't just call
+		 * We've reported success already, so can't just call
 		 * failed_setup we call ofono_gprs_context_deactivated instead.
 		 * Thats not a clean solution at all, but as it seems there is
 		 * no clean way to determine whether it is possible to activate
@@ -229,33 +122,47 @@ static void activate_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	/* We've reported sucess already */
 }
 
-static void setup_cb(gboolean ok, GAtResult *result, gpointer user_data)
+static void gemalto_gprs_activate_primary(struct ofono_gprs_context *gc,
+				const struct ofono_gprs_primary_context *ctx,
+				ofono_gprs_context_cb_t cb, void *data)
 {
-	struct ofono_gprs_context *gc = user_data;
 	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
-	char buf[32 + OFONO_GPRS_MAX_USERNAME_LENGTH +
-					OFONO_GPRS_MAX_PASSWORD_LENGTH +1];
 	struct ofono_modem *modem = ofono_gprs_context_get_modem(gc);
+	char *buf_apn;
+	char *buf_auth;
+	char buf[256];
 	const char *interface;
 
-	if (!ok) {
-		ofono_error("Failed to setup context");
-		failed_setup(gc, result, FALSE);
-		return;
-	}
+	DBG("cid %u", ctx->cid);
 
-	if(gemalto_get_auth_command(modem, gcd->active_context, gcd->auth_method,
-			gcd->username, gcd->password, buf, sizeof(buf))) {
-		if (!g_at_chat_send(gcd->chat, buf, none_prefix, NULL, NULL,
-									NULL))
-		goto error;
-	}
+	gcd->use_wwan = ofono_modem_get_integer(modem, "GemaltoWwan");
+	gcd->active_context = ctx->cid;
+	gcd->cb = cb;
+	gcd->cb_data = data;
+	memcpy(gcd->username, ctx->username, sizeof(ctx->username));
+	memcpy(gcd->password, ctx->password, sizeof(ctx->password));
+	gcd->state = STATE_ENABLING;
+	gcd->proto = ctx->proto;
+	gcd->auth_method = ctx->auth_method;
+
+	buf_apn = gemalto_get_cgdcont_command(modem, ctx->cid, ctx->proto,
+								ctx->apn);
+	buf_auth = gemalto_get_auth_command(modem, gcd->active_context,
+				gcd->auth_method, gcd->username, gcd->password);
+
 	/*
-	 * note that if the auth command is not ok we skip it and continue
-	 * but if the sending fails we do an error
+	 * note that if the cgdcont or auth commands are not ok we ignore them
+	 * and continue but if the sending fails we do an error
 	 */
+	if (!g_at_chat_send(gcd->chat, buf_apn, none_prefix,
+						NULL, NULL, NULL) ||
+			!g_at_chat_send(gcd->chat, buf_auth, none_prefix,
+						NULL, NULL, NULL)) {
+		failed_setup(gc, NULL, FALSE);
+		goto end;
+	}
 
-	if(gcd->use_wwan)
+	if (gcd->use_wwan)
 		sprintf(buf, "AT^SWWAN=1,%u", gcd->active_context);
 	else
 		sprintf(buf, "AT+CGACT=%u,1", gcd->active_context);
@@ -266,7 +173,7 @@ static void setup_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		interface = ofono_modem_get_string(modem, "NetworkInterface");
 
 		ofono_gprs_context_set_interface(gc, interface);
-		ofono_gprs_context_set_ipv4_address(gc, NULL, FALSE);
+		ofono_gprs_context_set_ipv4_address(gc, NULL, FALSE); /* DHCP */
 
 		/*
 		 * We report sucess already here because some modules need a
@@ -276,41 +183,13 @@ static void setup_cb(gboolean ok, GAtResult *result, gpointer user_data)
 
 		CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
 
-		return;
+		goto end;
 	}
 
-error:
 	failed_setup(gc, NULL, FALSE);
-}
-
-static void gemaltowwan_gprs_activate_primary(struct ofono_gprs_context *gc,
-				const struct ofono_gprs_primary_context *ctx,
-				ofono_gprs_context_cb_t cb, void *data)
-{
-	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
-	char buf[OFONO_GPRS_MAX_APN_LENGTH + 128];
-	struct ofono_modem *modem = ofono_gprs_context_get_modem(gc);
-
-	DBG("cid %u", ctx->cid);
-
-	gcd->use_wwan=ofono_modem_get_integer(modem, "Gemalto_WWAN");
-	gcd->active_context = ctx->cid;
-	gcd->cb = cb;
-	gcd->cb_data = data;
-	memcpy(gcd->username, ctx->username, sizeof(ctx->username));
-	memcpy(gcd->password, ctx->password, sizeof(ctx->password));
-	gcd->state = STATE_ENABLING;
-	gcd->proto = ctx->proto;
-	gcd->auth_method = ctx->auth_method;
-
-	gemalto_get_cgdcont_command(modem, ctx->cid, ctx->proto, ctx->apn, buf,
-								sizeof(buf));
-
-	if (g_at_chat_send(gcd->chat, buf, none_prefix,
-				setup_cb, gc, NULL) > 0)
-		return;
-
-	CALLBACK_WITH_FAILURE(cb, data);
+end:
+	g_free(buf_apn);
+	g_free(buf_auth);
 }
 
 static void deactivate_cb(gboolean ok, GAtResult *result, gpointer user_data)
@@ -326,7 +205,7 @@ static void deactivate_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
 }
 
-static void gemaltowwan_gprs_deactivate_primary(struct ofono_gprs_context *gc,
+static void gemalto_gprs_deactivate_primary(struct ofono_gprs_context *gc,
 					unsigned int cid,
 					ofono_gprs_context_cb_t cb, void *data)
 {
@@ -339,7 +218,7 @@ static void gemaltowwan_gprs_deactivate_primary(struct ofono_gprs_context *gc,
 	gcd->cb = cb;
 	gcd->cb_data = data;
 
-	if(gcd->use_wwan)
+	if (gcd->use_wwan)
 		sprintf(buf, "AT^SWWAN=0,%u", gcd->active_context);
 	else
 		sprintf(buf, "AT+CGACT=%u,0", gcd->active_context);
@@ -383,7 +262,7 @@ static void cgev_notify(GAtResult *result, gpointer user_data)
 	gcd->state = STATE_IDLE;
 }
 
-static int gemaltowwan_gprs_context_probe(struct ofono_gprs_context *gc,
+static int gemalto_gprs_context_probe(struct ofono_gprs_context *gc,
 					unsigned int model, void *data)
 {
 	GAtChat *chat = data;
@@ -396,8 +275,8 @@ static int gemaltowwan_gprs_context_probe(struct ofono_gprs_context *gc,
 	if (gcd == NULL)
 		return -ENOMEM;
 
-	if(modem)
-		gcd->use_wwan=ofono_modem_get_integer(modem, "Gemalto_WWAN");
+	if (modem)
+		gcd->use_wwan = ofono_modem_get_integer(modem, "Gemalto_WWAN");
 	gcd->chat = g_at_chat_clone(chat);
 	ofono_gprs_context_set_data(gc, gcd);
 	g_at_chat_register(chat, "+CGEV:", cgev_notify, FALSE, gc, NULL);
@@ -405,7 +284,7 @@ static int gemaltowwan_gprs_context_probe(struct ofono_gprs_context *gc,
 	return 0;
 }
 
-static void gemaltowwan_gprs_context_remove(struct ofono_gprs_context *gc)
+static void gemalto_gprs_context_remove(struct ofono_gprs_context *gc)
 {
 	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
 
@@ -417,7 +296,7 @@ static void gemaltowwan_gprs_context_remove(struct ofono_gprs_context *gc)
 	g_free(gcd);
 }
 
-static void gemaltowwan_gprs_detach_shutdown(struct ofono_gprs_context *gc,
+static void gemalto_gprs_detach_shutdown(struct ofono_gprs_context *gc,
 					unsigned int cid)
 {
 	DBG("cid %u", cid);
@@ -425,21 +304,21 @@ static void gemaltowwan_gprs_detach_shutdown(struct ofono_gprs_context *gc,
 	ofono_gprs_context_deactivated(gc, cid);
 }
 
-static struct ofono_gprs_context_driver driver = {
-	.name			= "gemaltowwanmodem",
-	.probe			= gemaltowwan_gprs_context_probe,
-	.remove			= gemaltowwan_gprs_context_remove,
-	.activate_primary	= gemaltowwan_gprs_activate_primary,
-	.deactivate_primary	= gemaltowwan_gprs_deactivate_primary,
-	.detach_shutdown	= gemaltowwan_gprs_detach_shutdown,
+static const struct ofono_gprs_context_driver driver = {
+	.name			= "gemaltomodemswwanblocking",
+	.probe			= gemalto_gprs_context_probe,
+	.remove			= gemalto_gprs_context_remove,
+	.activate_primary	= gemalto_gprs_activate_primary,
+	.deactivate_primary	= gemalto_gprs_deactivate_primary,
+	.detach_shutdown	= gemalto_gprs_detach_shutdown,
 };
 
-void gemaltowwan_gprs_context_init(void)
+void gemalto_gprs_context_swwan_blocking_init(void)
 {
 	ofono_gprs_context_driver_register(&driver);
 }
 
-void gemaltowwan_gprs_context_exit(void)
+void gemalto_gprs_context_swwan_blocking_exit(void)
 {
 	ofono_gprs_context_driver_unregister(&driver);
 }

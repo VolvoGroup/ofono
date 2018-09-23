@@ -2,7 +2,7 @@
  *
  *  oFono - Open Source Telephony
  *
- *  Copyright (C) 2018 Gemalto M2M. All rights reserved.
+ *  Copyright (C) 2018 Gemalto M2M
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -19,9 +19,12 @@
  *
  */
 
-enum gemalto_model {
-	GEMALTO_GENERIC = 0,
-	GEMALTO_SGAUTH,
-	GEMALTO_SWWAN_SGAUTH,
-	GEMALTO_SWWAN,
-};
+struct ofono_modem;
+
+char *gemalto_get_auth_command(struct ofono_modem *modem, int cid,
+				enum ofono_gprs_auth_method auth_method,
+				const char *username, const char *password);
+
+
+char *gemalto_get_cgdcont_command(struct ofono_modem *modem, guint cid,
+				enum ofono_gprs_proto proto, const char *apn);

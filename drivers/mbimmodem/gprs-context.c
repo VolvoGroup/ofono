@@ -22,7 +22,6 @@
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
-
 #define _GNU_SOURCE
 #include <stdint.h>
 #include <stdbool.h>
@@ -75,11 +74,11 @@ static uint32_t auth_method_to_auth_protocol(enum ofono_gprs_auth_method method)
 		return 2; /* MBIMAuthProtocolChap */
 	case OFONO_GPRS_AUTH_METHOD_PAP:
 		return 1; /* MBIMAuthProtocolPap */
-	default:
-		return 0;
+	case OFONO_GPRS_AUTH_METHOD_NONE:
+		return 0; /* MBIMAUthProtocolNone */
 	}
 
-	return 0;
+	return 0; /* MBIMAUthProtocolNone */
 }
 
 static void mbim_deactivate_cb(struct mbim_message *message, void *user)
@@ -313,6 +312,8 @@ error:
 		mbim_message_unref(message);
 }
 
+int usleep(useconds_t usec);
+
 static void mbim_activate_cb(struct mbim_message *message, void *user)
 {
 	struct ofono_gprs_context *gc = user;
@@ -329,6 +330,8 @@ static void mbim_activate_cb(struct mbim_message *message, void *user)
 	mbim_message_set_arguments(message, "uuuuuuuuuuuuuuu",
 				gcd->active_context,
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+	if (0) usleep(500*1000); // doesn't help, but keep for now
 
 	if (mbim_device_send(gcd->device, GPRS_CONTEXT_GROUP, message,
 				mbim_ip_configuration_cb, gc, NULL) > 0)
@@ -347,6 +350,8 @@ static void mbim_gprs_activate_primary(struct ofono_gprs_context *gc,
 {
 	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
 	struct mbim_message *message;
+	const char *username = NULL;
+	const char *password = NULL;
 
 	DBG("cid %u", ctx->cid);
 
@@ -356,6 +361,12 @@ static void mbim_gprs_activate_primary(struct ofono_gprs_context *gc,
 	gcd->active_context = ctx->cid;
 	gcd->proto = ctx->proto;
 
+	if (ctx->auth_method != OFONO_GPRS_AUTH_METHOD_NONE && ctx->username[0])
+		username = ctx->username;
+
+	if (ctx->auth_method != OFONO_GPRS_AUTH_METHOD_NONE && ctx->password[0])
+		password = ctx->password;
+
 	message = mbim_message_new(mbim_uuid_basic_connect,
 					MBIM_CID_CONNECT,
 					MBIM_COMMAND_TYPE_SET);
@@ -363,8 +374,8 @@ static void mbim_gprs_activate_primary(struct ofono_gprs_context *gc,
 				ctx->cid,
 				1, /* MBIMActivationCommandActivate */
 				ctx->apn,
-				ctx->username[0] ? ctx->username : NULL,
-				ctx->password[0] ? ctx->password : NULL,
+				username,
+				password,
 				0, /*MBIMCompressionNone */
 				auth_method_to_auth_protocol(ctx->auth_method),
 				proto_to_context_ip_type(ctx->proto),
@@ -446,7 +457,7 @@ static void mbim_gprs_context_remove(struct ofono_gprs_context *gc)
 	l_free(gcd);
 }
 
-static struct ofono_gprs_context_driver driver = {
+static const struct ofono_gprs_context_driver driver = {
 	.name			= "mbim",
 	.probe			= mbim_gprs_context_probe,
 	.remove			= mbim_gprs_context_remove,

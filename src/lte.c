@@ -24,7 +24,6 @@
 #include <config.h>
 #endif
 
-#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -35,17 +34,17 @@
 #include <gdbus.h>
 
 #include "ofono.h"
-#include <ofono/lte.h>
 
 #include "common.h"
 #include "storage.h"
 
 #define SETTINGS_STORE "lte"
 #define SETTINGS_GROUP "Settings"
-#define DEFAULT_APN_KEY "AccessPointName"
+#define LTE_APN "DefaultAccessPointName"
+#define LTE_PROTO "Protocol"
 #define LTE_USERNAME "Username"
 #define LTE_PASSWORD "Password"
-#define AUTH_TYPE "AuthenticationMethod"
+#define LTE_AUTH_METHOD "AuthenticationMethod"
 
 struct ofono_lte {
 	const struct ofono_lte_driver *driver;
@@ -63,9 +62,10 @@ static GSList *g_drivers = NULL;
 static void lte_load_settings(struct ofono_lte *lte)
 {
 	char *apn;
+	char *proto_str;
+	char *auth_method_str;
 	char *username;
 	char *password;
-	enum ofono_gprs_auth_method auth_method;
 
 	if (lte->imsi == NULL)
 		return;
@@ -78,60 +78,61 @@ static void lte_load_settings(struct ofono_lte *lte)
 		return;
 	}
 
-	apn = g_key_file_get_string(lte->settings, SETTINGS_GROUP ,
-					DEFAULT_APN_KEY, NULL);
-	username = g_key_file_get_string(lte->settings, SETTINGS_GROUP ,
-					LTE_USERNAME, NULL);
-	password = g_key_file_get_string(lte->settings, SETTINGS_GROUP ,
-					LTE_PASSWORD, NULL);
-	auth_method = g_key_file_get_integer(lte->settings, SETTINGS_GROUP ,
-					AUTH_TYPE, NULL);
-	if (apn) {
+	apn = g_key_file_get_string(lte->settings, SETTINGS_GROUP,
+				LTE_APN, NULL);
+	proto_str = g_key_file_get_string(lte->settings, SETTINGS_GROUP,
+				LTE_PROTO, NULL);
+	auth_method_str = g_key_file_get_string(lte->settings, SETTINGS_GROUP,
+				LTE_AUTH_METHOD, NULL);
+	username = g_key_file_get_string(lte->settings, SETTINGS_GROUP,
+				LTE_USERNAME, NULL);
+	password = g_key_file_get_string(lte->settings, SETTINGS_GROUP,
+				LTE_PASSWORD, NULL);
+	if (apn && is_valid_apn(apn))
 		strcpy(lte->info.apn, apn);
-		g_free(apn);
-	}
 
-	if (username) {
+	if (proto_str == NULL)
+		proto_str = g_strdup("ip");
+
+	/* this must have a valid default */
+	if (!gprs_proto_from_string(proto_str, &lte->info.proto))
+		lte->info.proto = OFONO_GPRS_PROTO_IP;
+
+	if (auth_method_str == NULL)
+		auth_method_str = g_strdup("none");
+
+	/* this must have a valid default */
+	if (!gprs_auth_method_from_string(auth_method_str,
+							&lte->info.auth_method))
+		lte->info.auth_method = OFONO_GPRS_AUTH_METHOD_NONE;
+
+	if (username && strlen(username) <= OFONO_GPRS_MAX_USERNAME_LENGTH)
 		strcpy(lte->info.username, username);
-		g_free(username);
 
-	}
-
-	if (password) {
+	if (password && strlen(password) <= OFONO_GPRS_MAX_PASSWORD_LENGTH)
 		strcpy(lte->info.password, password);
-		g_free(password);
 
-	}
-
-	if (auth_method) {
-		lte->info.auth_method = auth_method;
-	}
-
+	g_free(apn);
+	g_free(proto_str);
+	g_free(auth_method_str);
+	g_free(username);
+	g_free(password);
 }
 
 static DBusMessage *lte_get_properties(DBusConnection *conn,
 					DBusMessage *msg, void *data)
 {
 	struct ofono_lte *lte = data;
+	const char *proto = gprs_proto_to_string(lte->info.proto);
 	const char *apn = lte->info.apn;
+	const char* auth_method =
+			gprs_auth_method_to_string(lte->info.auth_method);
 	const char *username = lte->info.username;
 	const char *password = lte->info.password;
-	char* auth_method = g_new0(char, 5);
 	DBusMessage *reply;
 	DBusMessageIter iter;
 	DBusMessageIter dict;
 
-	switch (lte->info.auth_method) {
-	case OFONO_GPRS_AUTH_METHOD_PAP:
-		g_strlcpy(auth_method, "pap", 5);
-		break;
-	case OFONO_GPRS_AUTH_METHOD_CHAP:
-		g_strlcpy(auth_method, "chap", 5);
-		break;
-	default:
-		g_strlcpy(auth_method, "", 5);
-		break;
-	}
 	reply = dbus_message_new_method_return(msg);
 	if (reply == NULL)
 		return NULL;
@@ -141,216 +142,82 @@ static DBusMessage *lte_get_properties(DBusConnection *conn,
 	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY,
 					OFONO_PROPERTIES_ARRAY_SIGNATURE,
 					&dict);
-	ofono_dbus_dict_append(&dict, DEFAULT_APN_KEY, DBUS_TYPE_STRING, &apn);
-	ofono_dbus_dict_append(&dict, LTE_USERNAME, DBUS_TYPE_STRING, &username);
-	ofono_dbus_dict_append(&dict, LTE_PASSWORD, DBUS_TYPE_STRING, &password);
-	ofono_dbus_dict_append(&dict, AUTH_TYPE, DBUS_TYPE_STRING, &auth_method);
+	ofono_dbus_dict_append(&dict, LTE_APN, DBUS_TYPE_STRING, &apn);
+	ofono_dbus_dict_append(&dict, LTE_PROTO, DBUS_TYPE_STRING, &proto);
+	ofono_dbus_dict_append(&dict, LTE_AUTH_METHOD, DBUS_TYPE_STRING,
+					&auth_method);
+	ofono_dbus_dict_append(&dict, LTE_USERNAME, DBUS_TYPE_STRING,
+					&username);
+	ofono_dbus_dict_append(&dict, LTE_PASSWORD, DBUS_TYPE_STRING,
+					&password);
 	dbus_message_iter_close_container(&iter, &dict);
 
-	g_free(auth_method);
 	return reply;
 }
 
 static void lte_set_default_attach_info_cb(const struct ofono_error *error,
-						void *data)
+								void *data)
 {
 	struct ofono_lte *lte = data;
 	const char *path = __ofono_atom_get_path(lte->atom);
 	DBusConnection *conn = ofono_dbus_get_connection();
 	DBusMessage *reply;
-	const char *apn = lte->info.apn;
-	const char *username = lte->info.username;
-	const char *password = lte->info.password;
-	enum ofono_gprs_auth_method auth_method = lte->info.auth_method;
+	char *key;
+	char *value;
+	const char *str;
+	DBusMessageIter iter;
+	DBusMessageIter var;
 
-	if(error != NULL) {
-		DBG("%s error %d", path, error->type);
+	DBG("%s error %d", path, error->type);
 
-		if (error->type != OFONO_ERROR_TYPE_NO_ERROR) {
-			__ofono_dbus_pending_reply(&lte->pending,
-					__ofono_error_failed(lte->pending));
-			return;
-		}
+	if (error->type != OFONO_ERROR_TYPE_NO_ERROR) {
+		__ofono_dbus_pending_reply(&lte->pending,
+				__ofono_error_failed(lte->pending));
+		return;
 	}
 
-	if (*lte->pending_info.apn) {
-		g_strlcpy(lte->info.apn, lte->pending_info.apn,
-			OFONO_GPRS_MAX_APN_LENGTH + 1);
-	}
+	/*
+	 * Reparsing of the message to extract the key and value
+	 * No error checking needed since we already validated pending
+	 */
+	dbus_message_iter_init(lte->pending, &iter);
+	dbus_message_iter_get_basic(&iter, &str);
+	key = strdup(str);
 
-	if (*lte->pending_info.username) {
-		g_strlcpy(lte->info.username, lte->pending_info.username,
-			OFONO_GPRS_MAX_USERNAME_LENGTH + 1);
-	}
+	dbus_message_iter_next(&iter);
+	dbus_message_iter_recurse(&iter, &var);
+	dbus_message_iter_get_basic(&var, &str);
+	value = strdup(str);
 
-	if (*lte->pending_info.password) {
-		g_strlcpy(lte->info.password, lte->pending_info.password,
-			OFONO_GPRS_MAX_PASSWORD_LENGTH + 1);
-	}
-
-	if (lte->pending_info.auth_method >= 0 && lte->pending_info.auth_method <= 3) {
-		lte->info.auth_method = lte->pending_info.auth_method;
-	}
-
-	if (lte->settings) {
-
-		if (strlen(lte->info.apn) == 0)
-			/* Clear entry on empty APN. */
-			g_key_file_remove_key(lte->settings, SETTINGS_GROUP,
-						DEFAULT_APN_KEY, NULL);
-		else
-			g_key_file_set_string(lte->settings, SETTINGS_GROUP,
-						DEFAULT_APN_KEY, lte->info.apn);
-
-		if (strlen(lte->info.username) == 0)
-			/* Clear entry on empty Username. */
-			g_key_file_remove_key(lte->settings, SETTINGS_GROUP,
-						LTE_USERNAME, NULL);
-		else
-			g_key_file_set_string(lte->settings, SETTINGS_GROUP,
-						LTE_USERNAME, lte->info.username);
-
-		if (strlen(lte->info.password) == 0)
-			/* Clear entry on empty Password. */
-			g_key_file_remove_key(lte->settings, SETTINGS_GROUP,
-						LTE_PASSWORD, NULL);
-		else
-			g_key_file_set_string(lte->settings, SETTINGS_GROUP,
-						LTE_PASSWORD, lte->info.password);
-
-		if (lte->info.auth_method == 0)
-			/* Clear entry on empty Authentication type. */
-			g_key_file_remove_key(lte->settings, SETTINGS_GROUP,
-						AUTH_TYPE, NULL);
-		else
-			g_key_file_set_integer(lte->settings, SETTINGS_GROUP,
-						AUTH_TYPE, lte->info.auth_method);
-
-		storage_sync(lte->imsi, SETTINGS_STORE, lte->settings);
-	}
+	memcpy(&lte->info, &lte->pending_info, sizeof(lte->info));
 
 	reply = dbus_message_new_method_return(lte->pending);
 	__ofono_dbus_pending_reply(&lte->pending, reply);
 
+	if (lte->settings) {
+		/*
+		 * the following code removes from storage empty APN, user, pwd
+		 * for proto and auth_method, given that they always
+		 * have defaults, it will not do anything.
+		 */
+		if (!*value)
+			/* Clear entry on empty string. */
+			g_key_file_remove_key(lte->settings,
+				SETTINGS_GROUP, key, NULL);
+		else
+			g_key_file_set_string(lte->settings,
+				SETTINGS_GROUP, key, value);
+
+		storage_sync(lte->imsi, SETTINGS_STORE, lte->settings);
+	}
+
 	ofono_dbus_signal_property_changed(conn, path,
 					OFONO_CONNECTION_CONTEXT_INTERFACE,
-					DEFAULT_APN_KEY,
-					DBUS_TYPE_STRING, &apn);
-	ofono_dbus_signal_property_changed(conn, path,
-					OFONO_CONNECTION_CONTEXT_INTERFACE,
-					LTE_USERNAME,
-					DBUS_TYPE_STRING, &username);
-	ofono_dbus_signal_property_changed(conn, path,
-					OFONO_CONNECTION_CONTEXT_INTERFACE,
-					LTE_PASSWORD,
-					DBUS_TYPE_STRING, &password);
-	ofono_dbus_signal_property_changed(conn, path,
-					OFONO_CONNECTION_CONTEXT_INTERFACE,
-					AUTH_TYPE,
-					DBUS_TYPE_UINT32, &auth_method);
+					key,
+					DBUS_TYPE_STRING, &value);
 
-}
-
-static DBusMessage *lte_set_default_apn(struct ofono_lte *lte,
-				DBusConnection *conn, DBusMessage *msg,
-				const char *apn)
-{
-
-	if (lte->driver->set_default_attach_info == NULL)
-		return __ofono_error_not_implemented(msg);
-
-	if (lte->pending)
-		return __ofono_error_busy(msg);
-
-	/* We do care about empty value: it can be used for reset. */
-	if (is_valid_apn(apn) == FALSE && apn[0] != '\0')
-		return __ofono_error_invalid_format(msg);
-
-	lte->pending = dbus_message_ref(msg);
-
-	g_strlcpy(lte->info.apn, apn, OFONO_GPRS_MAX_APN_LENGTH + 1);
-
-	lte->driver->set_default_attach_info(lte, &lte->info,
-					lte_set_default_attach_info_cb, lte);
-
-	return dbus_message_ref(msg);;
-}
-
-static DBusMessage *lte_set_username(struct ofono_lte *lte,
-				DBusConnection *conn, DBusMessage *msg,
-				const char *username)
-{
-
-	void *data = lte;
-
-	if (lte->driver->set_default_attach_info == NULL)
-		return __ofono_error_not_implemented(msg);
-
-	if (lte->pending)
-		return __ofono_error_busy(msg);
-
-	if (g_str_equal(username, lte->info.username))
-		return dbus_message_new_method_return(msg);
-
-	lte->pending = dbus_message_ref(msg);
-
-	g_strlcpy(lte->pending_info.username, username, OFONO_GPRS_MAX_USERNAME_LENGTH + 1);
-
-	lte_set_default_attach_info_cb(NULL, data);
-
-	return dbus_message_ref(msg);;
-}
-
-static DBusMessage *lte_set_password(struct ofono_lte *lte,
-				DBusConnection *conn, DBusMessage *msg,
-				const char *password)
-{
-	void *data = lte;
-
-	if (lte->driver->set_default_attach_info == NULL)
-		return __ofono_error_not_implemented(msg);
-
-	if (lte->pending)
-		return __ofono_error_busy(msg);
-
-	if (g_str_equal(password, lte->info.password))
-		return dbus_message_new_method_return(msg);
-
-	lte->pending = dbus_message_ref(msg);
-
-	g_strlcpy(lte->pending_info.password, password, OFONO_GPRS_MAX_PASSWORD_LENGTH + 1);
-
-	lte_set_default_attach_info_cb(NULL, data);
-
-	return dbus_message_ref(msg);;
-}
-
-static DBusMessage *lte_set_auth_type(struct ofono_lte *lte,
-				DBusConnection *conn, DBusMessage *msg,
-				enum ofono_gprs_auth_method auth_method)
-{
-	void *data = lte;
-
-	if (lte->driver->set_default_attach_info == NULL)
-		return __ofono_error_not_implemented(msg);
-
-	if (lte->pending)
-		return __ofono_error_busy(msg);
-
-	if (auth_method == lte->info.auth_method)
-		return dbus_message_new_method_return(msg);
-
-	/* We do care about empty value: it can be used for reset. */
-	if (auth_method >= 3 && auth_method <= 0)
-		return __ofono_error_invalid_format(msg);
-
-	lte->pending = dbus_message_ref(msg);
-
-	lte->pending_info.auth_method = auth_method;
-
-	lte_set_default_attach_info_cb(NULL, data);
-
-	return dbus_message_ref(msg);;
+	g_free(value);
+	g_free(key);
 }
 
 static DBusMessage *lte_set_property(DBusConnection *conn,
@@ -362,6 +229,13 @@ static DBusMessage *lte_set_property(DBusConnection *conn,
 	const char *property;
 	const char *str;
 	enum ofono_gprs_auth_method auth_method;
+	enum ofono_gprs_proto proto;
+
+	if (lte->driver->set_default_attach_info == NULL)
+		return __ofono_error_not_implemented(msg);
+
+	if (lte->pending)
+		return __ofono_error_busy(msg);
 
 	if (!dbus_message_iter_init(msg, &iter))
 		return __ofono_error_invalid_args(msg);
@@ -377,45 +251,65 @@ static DBusMessage *lte_set_property(DBusConnection *conn,
 
 	dbus_message_iter_recurse(&iter, &var);
 
-	if (!strcmp(property, DEFAULT_APN_KEY)) {
-		if (dbus_message_iter_get_arg_type(&var) != DBUS_TYPE_STRING)
-			return __ofono_error_invalid_args(msg);
+	if (dbus_message_iter_get_arg_type(&var) != DBUS_TYPE_STRING)
+		return __ofono_error_invalid_args(msg);
 
-		dbus_message_iter_get_basic(&var, &str);
+	dbus_message_iter_get_basic(&var, &str);
 
-		return lte_set_default_apn(lte, conn, msg, str);
-	}
+	memcpy(&lte->pending_info, &lte->info, sizeof(lte->info));
 
-	if (!strcmp(property, LTE_USERNAME)) {
-		if (dbus_message_iter_get_arg_type(&var) != DBUS_TYPE_STRING)
-			return __ofono_error_invalid_args(msg);
+	if ((strcmp(property, LTE_APN) == 0)) {
+		if (g_str_equal(str, lte->info.apn))
+			return dbus_message_new_method_return(msg);
 
-		dbus_message_iter_get_basic(&var, &str);
+		/* We do care about empty value: it can be used for reset. */
+		if (is_valid_apn(str) == FALSE && str[0] != '\0')
+			return __ofono_error_invalid_format(msg);
 
-		return lte_set_username(lte, conn, msg, str);
-	}
+		g_strlcpy(lte->pending_info.apn, str,
+					OFONO_GPRS_MAX_APN_LENGTH + 1);
+	} else if ((strcmp(property, LTE_PROTO) == 0)) {
+		if (!gprs_proto_from_string(str, &proto))
+			return __ofono_error_invalid_format(msg);
 
-	if (!strcmp(property, LTE_PASSWORD)) {
-		if (dbus_message_iter_get_arg_type(&var) != DBUS_TYPE_STRING)
-			return __ofono_error_invalid_args(msg);
+		if (proto == lte->info.proto)
+			return dbus_message_new_method_return(msg);
 
-		dbus_message_iter_get_basic(&var, &str);
+		lte->pending_info.proto = proto;
+	} else if (strcmp(property, LTE_AUTH_METHOD) == 0) {
+		if (!gprs_auth_method_from_string(str, &auth_method))
+			return __ofono_error_invalid_format(msg);
 
-		return lte_set_password(lte, conn, msg, str);
-	}
+		if (auth_method == lte->info.auth_method)
+			return dbus_message_new_method_return(msg);
 
-	if (!strcmp(property, AUTH_TYPE)) {
-		if (dbus_message_iter_get_arg_type(&var) != DBUS_TYPE_STRING)
-			return __ofono_error_invalid_args(msg);
+		lte->pending_info.auth_method = auth_method;
+	} else if (strcmp(property, LTE_USERNAME) == 0) {
+		if (strlen(str) > OFONO_GPRS_MAX_USERNAME_LENGTH)
+			return __ofono_error_invalid_format(msg);
 
-		dbus_message_iter_get_basic(&var, &str);
+		if (g_str_equal(str, lte->info.username))
+			return dbus_message_new_method_return(msg);
 
-		auth_method = get_auth_type_from_str(str);
+		g_strlcpy(lte->pending_info.username, str,
+					OFONO_GPRS_MAX_USERNAME_LENGTH + 1);
+	} else if (strcmp(property, LTE_PASSWORD) == 0) {
+		if (strlen(str) > OFONO_GPRS_MAX_PASSWORD_LENGTH)
+			return __ofono_error_invalid_format(msg);
 
-		return lte_set_auth_type(lte, conn, msg, auth_method);
-	}
+		if (g_str_equal(str, lte->info.password))
+			return dbus_message_new_method_return(msg);
 
-	return __ofono_error_invalid_args(msg);
+		g_strlcpy(lte->pending_info.password, str,
+					OFONO_GPRS_MAX_PASSWORD_LENGTH + 1);
+	} else
+		return __ofono_error_invalid_args(msg);
+
+	lte->pending = dbus_message_ref(msg);
+	lte->driver->set_default_attach_info(lte, &lte->pending_info,
+					lte_set_default_attach_info_cb, lte);
+
+	return NULL;
 }
 
 static const GDBusMethodTable lte_methods[] = {

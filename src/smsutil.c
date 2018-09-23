@@ -2280,10 +2280,10 @@ char *sms_decode_text(GSList *sms_list)
 			 * If language is not defined in 3GPP TS 23.038,
 			 * implementations are instructed to ignore it
 			 */
-			if (locking_shift > SMS_ALPHABET_PORTUGUESE)
+			if (locking_shift > SMS_ALPHABET_URDU)
 				locking_shift = GSM_DIALECT_DEFAULT;
 
-			if (single_shift > SMS_ALPHABET_PORTUGUESE)
+			if (single_shift > SMS_ALPHABET_URDU)
 				single_shift = GSM_DIALECT_DEFAULT;
 
 			converted = convert_gsm_to_utf8_with_lang(buf, written,
@@ -3434,7 +3434,7 @@ static GSList *split_concatenated_pdu_to_list(struct sms *template,
 	unsigned int written = 0;
 	guint8 seq = 0;
 
-	if(numberOfSms > 255 || numberOfSms == 1) {
+	if (numberOfSms > 255 || numberOfSms == 1) {
 		return NULL;
 	}
 

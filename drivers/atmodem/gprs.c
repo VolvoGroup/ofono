@@ -25,7 +25,6 @@
 #include <config.h>
 #endif
 
-#define _GNU_SOURCE
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -61,6 +60,9 @@ struct gprs_data {
 	gboolean nb_inds;
 	gboolean auto_attach; /* for LTE modems & co */
 	int attached;
+	int cgreg_status;
+	int cereg_status;
+	int c5greg_status;
 };
 
 struct netreg_info {
@@ -89,7 +91,7 @@ static void at_gprs_set_attached(struct ofono_gprs *gprs, int attached,
 	struct cb_data *cbd;
 	char buf[64];
 
-	if(gd->auto_attach) {
+	if (gd->auto_attach) {
 		CALLBACK_WITH_SUCCESS(cb, data);
 		return;
 	}
@@ -115,21 +117,104 @@ static void at_cgreg_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	struct ofono_error error;
 	int status;
 	struct gprs_data *gd = cbd->user;
+	gboolean last = !(gd->has_cereg || gd->has_c5greg);
 
 	decode_at_error(&error, g_at_result_final_response(result));
 
 	if (!ok) {
-		cb(&error, -1, cbd->data);
-		return;
+		status = -1;
+		goto end;
 	}
 
 	if (at_util_parse_reg(result, "+CGREG:", NULL, &status,
 				NULL, NULL, NULL, gd->vendor) == FALSE) {
-		CALLBACK_WITH_FAILURE(cb, -1, cbd->data);
-		return;
+		error.type = OFONO_ERROR_TYPE_FAILURE;
+		error.error = 0;
+		status = -1;
+		goto end;
 	}
 
-	cb(&error, status, cbd->data);
+end:
+	gd->cgreg_status = status;
+
+	if (last)
+		cb(&error, status, cbd->data);
+}
+
+static void at_cereg_cb(gboolean ok, GAtResult *result, gpointer user_data)
+{
+	struct cb_data *cbd = user_data;
+	ofono_gprs_status_cb_t cb = cbd->cb;
+	struct ofono_error error;
+	int status;
+	struct gprs_data *gd = cbd->user;
+	gboolean last = !gd->has_c5greg;
+
+	decode_at_error(&error, g_at_result_final_response(result));
+
+	if (!ok) {
+		status = -1;
+		goto end;
+	}
+
+	if (at_util_parse_reg(result, "+CEREG:", NULL, &status,
+				NULL, NULL, NULL, gd->vendor) == FALSE) {
+		error.type = OFONO_ERROR_TYPE_FAILURE;
+		error.error = 0;
+		status = -1;
+		goto end;
+	}
+
+end:
+	gd->cereg_status = status;
+
+	if (last) {
+
+		if (/*gd->cgreg_status == NETWORK_REGISTRATION_STATUS_DENIED ||*/
+			gd->cgreg_status == NETWORK_REGISTRATION_STATUS_REGISTERED ||
+			gd->cgreg_status == NETWORK_REGISTRATION_STATUS_ROAMING)
+			cb(&error, gd->cgreg_status, cbd->data);
+		else
+			cb(&error, status, cbd->data);
+	}
+}
+
+static void at_c5greg_cb(gboolean ok, GAtResult *result, gpointer user_data)
+{
+	struct cb_data *cbd = user_data;
+	ofono_gprs_status_cb_t cb = cbd->cb;
+	struct ofono_error error;
+	int status;
+	struct gprs_data *gd = cbd->user;
+
+	decode_at_error(&error, g_at_result_final_response(result));
+
+	if (!ok) {
+		status = -1;
+		goto end;
+	}
+
+	if (at_util_parse_reg(result, "+C5GREG:", NULL, &status,
+				NULL, NULL, NULL, gd->vendor) == FALSE) {
+		error.type = OFONO_ERROR_TYPE_FAILURE;
+		error.error = 0;
+		status = -1;
+		goto end;
+	}
+
+end:
+	gd->c5greg_status = status;
+
+	if (/*gd->cgreg_status == NETWORK_REGISTRATION_STATUS_DENIED ||*/
+			gd->cgreg_status == NETWORK_REGISTRATION_STATUS_REGISTERED ||
+			gd->cgreg_status == NETWORK_REGISTRATION_STATUS_ROAMING)
+		cb(&error, gd->cgreg_status, cbd->data);
+	else if (/*gd->cereg_status == NETWORK_REGISTRATION_STATUS_DENIED ||*/
+			gd->cereg_status == NETWORK_REGISTRATION_STATUS_REGISTERED ||
+			gd->cereg_status == NETWORK_REGISTRATION_STATUS_ROAMING)
+		cb(&error, gd->cereg_status, cbd->data);
+	else
+		cb(&error, status, cbd->data);
 }
 
 static void at_gprs_registration_status(struct ofono_gprs *gprs,
@@ -137,9 +222,6 @@ static void at_gprs_registration_status(struct ofono_gprs *gprs,
 					void *data)
 {
 	struct gprs_data *gd = ofono_gprs_get_data(gprs);
-	struct cb_data *cbd = cb_data_new(cb, data);
-
-	cbd->user = gd;
 
 	switch (gd->vendor) {
 	case OFONO_VENDOR_GOBI:
@@ -160,13 +242,51 @@ static void at_gprs_registration_status(struct ofono_gprs *gprs,
 		break;
 	}
 
-	if (g_at_chat_send(gd->chat, "AT+CGREG?", cgreg_prefix,
-				at_cgreg_cb, cbd, g_free) > 0)
-		return;
+	/*
+	 * this is long: send all indicators, compare at the end if one reports
+	 * attached and use it, otherwise report status for last indicator
+	 * tested (higher technology).
+	 * Note: AT+CGATT? is not good because doesn't tell us if we are roaming
+	 */
+	if (gd->has_cgreg) {
+		struct cb_data *cbd = cb_data_new(cb, data);
+		cbd->user = gd;
+		gd->cgreg_status = -1; /* preset in case of fail of the at send */
 
-	g_free(cbd);
+		/* g_at_chat_send fails only if g_new_try fails, so we stop */
+		if (g_at_chat_send(gd->chat, "AT+CGREG?", cgreg_prefix,
+					at_cgreg_cb, cbd, g_free) == 0) {
+			g_free(cbd);
+			CALLBACK_WITH_FAILURE(cb, -1, data);
+			return;
+		}
+	}
 
-	CALLBACK_WITH_FAILURE(cb, -1, data);
+	if (gd->has_cereg) {
+		struct cb_data *cbd = cb_data_new(cb, data);
+		cbd->user = gd;
+		gd->cereg_status = -1;
+
+		if (g_at_chat_send(gd->chat, "AT+CEREG?", cereg_prefix,
+					at_cereg_cb, cbd, g_free) == 0) {
+			g_free(cbd);
+			CALLBACK_WITH_FAILURE(cb, -1, data);
+			return;
+		}
+	}
+
+	if (gd->has_c5greg) {
+		struct cb_data *cbd = cb_data_new(cb, data);
+		cbd->user = gd;
+		gd->c5greg_status = -1;
+
+		if (g_at_chat_send(gd->chat, "AT+C5GREG?", c5greg_prefix,
+					at_c5greg_cb, cbd, g_free) == 0) {
+			g_free(cbd);
+			CALLBACK_WITH_FAILURE(cb, -1, data);
+			return;
+		}
+	}
 }
 
 static void at_cgdcont_read_cb(gboolean ok, GAtResult *result,
@@ -214,7 +334,7 @@ static void at_cgdcont_read_cb(gboolean ok, GAtResult *result,
 static int cops_cb(gboolean ok, GAtResult *result)
 {
 	GAtResultIter iter;
-	int format, tech=-1;
+	int format, tech = -1;
 
 	if (!ok)
 		goto error;
@@ -243,7 +363,7 @@ static void netreg_notify_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	struct netreg_info *nri = user_data;
 	int cops_tech = cops_cb(ok, result);
 
-	if(cops_tech==-1) { /* take the indicator status */
+	if (cops_tech == -1) { /* take the indicator status */
 		ofono_gprs_status_notify(nri->gprs, nri->status);
 		return;
 	}
@@ -252,13 +372,13 @@ static void netreg_notify_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	 * values taken from the 3GPP 27.007 rel.15
 	 * matching enum access_technology in common.h up to 7.
 	 */
-	if (g_str_equal(nri->ind,"CGREG") && (cops_tech<7 || cops_tech==8))
+	if (g_str_equal(nri->ind,"CGREG") && (cops_tech < 7 || cops_tech == 8))
 		ofono_gprs_status_notify(nri->gprs, nri->status);
-	else if (g_str_equal(nri->ind,"CEREG") && (cops_tech==7 ||
-						cops_tech==9 || cops_tech==12))
+	else if (g_str_equal(nri->ind,"CEREG") && (cops_tech == 7 ||
+					cops_tech == 9 || cops_tech == 12))
 		ofono_gprs_status_notify(nri->gprs, nri->status);
-	else if (g_str_equal(nri->ind,"C5GREG") && (cops_tech==10 ||
-						cops_tech==11 || cops_tech==13))
+	else if (g_str_equal(nri->ind,"C5GREG") && (cops_tech == 10 ||
+					cops_tech == 11 || cops_tech == 13))
 		ofono_gprs_status_notify(nri->gprs, nri->status);
 	/* all other cases ignored: indicator not for current AcT */
 }
@@ -269,14 +389,14 @@ static void netreg_notify(struct ofono_gprs *gprs, const char* ind, int status,
 	struct gprs_data *gd = ofono_gprs_get_data(gprs);
 	struct netreg_info *nri;
 
-	if (status==NETWORK_REGISTRATION_STATUS_DENIED ||
-			status==NETWORK_REGISTRATION_STATUS_REGISTERED ||
-			status==NETWORK_REGISTRATION_STATUS_ROAMING ||
-			gd->nb_inds==1) {
+	if (status == NETWORK_REGISTRATION_STATUS_DENIED ||
+			status == NETWORK_REGISTRATION_STATUS_REGISTERED ||
+			status == NETWORK_REGISTRATION_STATUS_ROAMING ||
+			gd->nb_inds == 1) {
 		/* accept this status and process */
 		ofono_gprs_status_notify(gprs, status);
 
-		if(bearer != -1)
+		if (bearer != -1)
 			ofono_gprs_bearer_notify(gprs, bearer);
 
 		return;
@@ -751,13 +871,13 @@ static void gprs_initialized(struct ofono_gprs *gprs)
 
 static void set_indreg(struct gprs_data *gd, const char *ind, gboolean present)
 {
-	if(g_str_equal(ind,"CGREG"))
+	if (g_str_equal(ind,"CGREG"))
 		gd->has_cgreg = present;
 
-	if(g_str_equal(ind,"CEREG"))
+	if (g_str_equal(ind,"CEREG"))
 		gd->has_cereg = present;
 
-	if(g_str_equal(ind,"C5GREG"))
+	if (g_str_equal(ind,"C5GREG"))
 		gd->has_c5greg = present;
 
 }
@@ -799,7 +919,7 @@ retry:
 
 	g_at_result_iter_close_list(&iter);
 
-	if(gd->vendor==OFONO_VENDOR_GEMALTO) {
+	if (gd->vendor == OFONO_VENDOR_GEMALTO) {
 		/*
 		 * Gemalto prefers to print as much information as available
 		 * for support purposes
@@ -815,13 +935,13 @@ retry:
 	set_indreg(gd, ind,TRUE);
 	g_at_chat_send(gd->chat, buf, none_prefix, NULL, NULL, NULL);
 
-	if(last)
+	if (last)
 		goto endcheck;
 	return;
 
 error:
 	set_indreg(gd, ind,FALSE);
-	if(!last)
+	if (!last)
 		return;
 
 endcheck:
@@ -832,7 +952,7 @@ endcheck:
 	if (gd->has_c5greg)
 		gd->nb_inds++;
 
-	if(gd->nb_inds==0) {
+	if (gd->nb_inds == 0) {
 		ofono_info("GPRS not supported on this device");
 		ofono_gprs_remove(gprs);
 		return;
@@ -900,9 +1020,8 @@ static void at_cgdcont_test_cb(gboolean ok, GAtResult *result,
 			continue;
 
 		/* We look for IP PDPs */
-		if (g_str_equal(pdp_type, "IP")){
+		if (g_str_equal(pdp_type, "IP"))
 			found = TRUE;
-		}
 	}
 
 	if (found == FALSE)
@@ -934,10 +1053,10 @@ static int at_gprs_probe(struct ofono_gprs *gprs,
 
 	ofono_gprs_set_data(gprs, gd);
 
-	if (gd->vendor==OFONO_VENDOR_GEMALTO) {
-		autoattach=ofono_modem_get_integer(modem, "Gto_Autoattach");
+	if (gd->vendor == OFONO_VENDOR_GEMALTO) {
+		autoattach=ofono_modem_get_integer(modem, "GemaltoAutoAttach");
 		/* set autoattach */
-		gd->auto_attach = (autoattach==1);
+		gd->auto_attach = (autoattach == 1);
 		/* skip the cgdcont scanning: set manually */
 		test_and_set_regstatus(gprs);
 	} else {
@@ -958,7 +1077,7 @@ static void at_gprs_remove(struct ofono_gprs *gprs)
 	g_free(gd);
 }
 
-static struct ofono_gprs_driver driver = {
+static const struct ofono_gprs_driver driver = {
 	.name			= "atmodem",
 	.probe			= at_gprs_probe,
 	.remove			= at_gprs_remove,

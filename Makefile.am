@@ -23,7 +23,7 @@ pkginclude_HEADERS = include/log.h include/plugin.h include/history.h \
 			include/cdma-provision.h include/handsfree.h \
 			include/handsfree-audio.h include/siri.h \
 			include/netmon.h include/lte.h include/ims.h \
-			include/storage.h
+			include/storage.h include/gemalto.h
 
 nodist_pkginclude_HEADERS = include/version.h
 
@@ -395,18 +395,25 @@ builtin_sources += drivers/atmodem/atutil.h \
 
 builtin_modules += gemaltomodem
 builtin_sources += drivers/atmodem/atutil.h \
+			include/gemalto.h \
 			drivers/gemaltomodem/gemaltomodem.h \
 			drivers/gemaltomodem/gemaltomodem.c \
-			drivers/gemaltomodem/gprs-context-wwan.c \
+			drivers/gemaltomodem/gemaltoutil.h \
+			drivers/gemaltomodem/gemaltoutil.c \
+			drivers/gemaltomodem/location-reporting.c \
 			drivers/gemaltomodem/voicecall.c \
-			drivers/gemaltomodem/location-reporting.c
+			drivers/gemaltomodem/lte.c \
+			drivers/gemaltomodem/gprs-context-swwan-blocking.c \
+			drivers/gemaltomodem/gprs-context-swwan.c \
+			drivers/gemaltomodem/gprs-context-mbim.c
 
 builtin_modules += xmm7modem
 builtin_sources += drivers/atmodem/atutil.h \
 			drivers/xmm7modem/xmm7modem.h \
 			drivers/xmm7modem/xmm7modem.c \
 			drivers/xmm7modem/radio-settings.c \
-			drivers/xmm7modem/ims.c
+			drivers/xmm7modem/ims.c \
+			drivers/xmm7modem/netmon.c
 
 if PHONESIM
 builtin_modules += phonesim
@@ -467,9 +474,6 @@ builtin_sources += plugins/stemgr.c
 
 builtin_modules += caif
 builtin_sources += plugins/caif.c
-
-builtin_modules += cinterion
-builtin_sources += plugins/cinterion.c
 
 builtin_modules += gemalto
 builtin_sources += plugins/gemalto.c
@@ -718,7 +722,7 @@ doc_files = doc/overview.txt doc/ofono-paper.txt doc/release-faq.txt \
 			doc/networkmonitor-api.txt \
 			doc/allowed-apns-api.txt \
 			doc/lte-api.txt \
-			doc/cinterion-hardware-monitor-api.txt \
+			doc/gemalto-hardware-monitor-api.txt \
 			doc/ims-api.txt
 
 
@@ -827,7 +831,8 @@ test_scripts = test/backtrace \
 		test/test-serving-cell-info \
 		test/ims-register \
 		test/ims-unregister \
-		test/list-applications
+		test/list-applications \
+		test/set-sms-alphabet
 
 
 if TEST
@@ -857,12 +862,9 @@ unit_tests += unit/test-mbim
 endif
 endif
 
-if TEST
+
 noinst_PROGRAMS = $(unit_tests) \
 			unit/test-sms-root unit/test-mux unit/test-caif
-else
-noinst_PROGRAMS =
-endif
 
 unit_test_common_SOURCES = unit/test-common.c src/common.c src/util.c
 unit_test_common_LDADD = @GLIB_LIBS@
@@ -1018,9 +1020,7 @@ endif
 endif
 endif
 
-if TEST
 noinst_PROGRAMS += gatchat/gsmdial gatchat/test-server gatchat/test-qcdm
-endif
 
 gatchat_gsmdial_SOURCES = gatchat/gsmdial.c $(gatchat_sources)
 gatchat_gsmdial_LDADD = @GLIB_LIBS@

@@ -3,7 +3,6 @@
  *  oFono - Open Source Telephony
  *
  *  Copyright (C) 2008-2011  Intel Corporation. All rights reserved.
- *  Copyright (C) 2018 Gemalto M2M
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -35,15 +34,17 @@
 
 #include "common.h"
 
-static GSList *g_devinfo_drivers = NULL;
-static GSList *g_driver_list = NULL;
-static GSList *g_modem_list = NULL;
+#define DEFAULT_POWERED_TIMEOUT (20)
 
-static int next_modem_id = 0;
-static gboolean powering_down = FALSE;
-static int modems_remaining = 0;
+static GSList *g_devinfo_drivers;
+static GSList *g_driver_list;
+static GSList *g_modem_list;
 
-static struct ofono_watchlist *g_modemwatches = NULL;
+static int next_modem_id;
+static gboolean powering_down;
+static int modems_remaining;
+
+static struct ofono_watchlist *g_modemwatches;
 
 enum property_type {
 	PROPERTY_TYPE_INVALID = 0,
@@ -73,10 +74,10 @@ struct ofono_modem {
 	ofono_bool_t		powered_pending;
 	ofono_bool_t		get_online;
 	ofono_bool_t		lockdown;
-	ofono_bool_t		powersave;
 	char			*lock_owner;
 	guint			lock_watch;
 	guint			timeout;
+	guint			timeout_hint;
 	ofono_bool_t		online;
 	struct ofono_watchlist	*online_watches;
 	struct ofono_watchlist	*powered_watches;
@@ -423,6 +424,8 @@ static void flush_atoms(struct ofono_modem *modem, enum modem_state new_state)
 	GSList *cur;
 	GSList *prev;
 	GSList *tmp;
+
+	DBG("");
 
 	prev = NULL;
 	cur = modem->atoms;
@@ -816,9 +819,6 @@ void __ofono_modem_append_properties(struct ofono_modem *modem,
 	ofono_dbus_dict_append(dict, "Emergency", DBUS_TYPE_BOOLEAN,
 				&emergency);
 
-	ofono_dbus_dict_append(dict, "Powersave", DBUS_TYPE_BOOLEAN,
-				&modem->powersave);
-
 	info = __ofono_atom_find(OFONO_ATOM_TYPE_DEVINFO, modem);
 	if (info) {
 		if (info->manufacturer)
@@ -1058,7 +1058,7 @@ static DBusMessage *set_property_lockdown(struct ofono_modem *modem,
 		}
 
 		modem->pending = dbus_message_ref(msg);
-		modem->timeout = g_timeout_add_seconds(60,
+		modem->timeout = g_timeout_add_seconds(modem->timeout_hint,
 						set_powered_timeout, modem);
 		return NULL;
 	}
@@ -1080,28 +1080,6 @@ done:
 					&lockdown);
 
 	return NULL;
-}
-
-static DBusMessage *set_property_powersave(struct ofono_modem *modem,
-					DBusMessage *msg,
-					DBusMessageIter *var)
-{
-	ofono_bool_t powersave;
-
-	if (dbus_message_iter_get_arg_type(var) != DBUS_TYPE_BOOLEAN)
-		return __ofono_error_invalid_args(msg);
-
-	dbus_message_iter_get_basic(var, &powersave);
-
-	if (modem->powersave == powersave)
-		return dbus_message_new_method_return(msg);
-
-	if (modem->driver->powersave == NULL)
-		return __ofono_error_not_implemented(msg);
-
-	modem->driver->powersave(modem, powersave);
-
-	return dbus_message_new_method_return(msg);
 }
 
 static DBusMessage *modem_set_property(DBusConnection *conn,
@@ -1127,9 +1105,6 @@ static DBusMessage *modem_set_property(DBusConnection *conn,
 		return __ofono_error_failed(msg);
 
 	dbus_message_iter_recurse(&iter, &var);
-
-	if (g_str_equal(name, "Powersave"))
-		return set_property_powersave(modem, msg, &var);
 
 	if (g_str_equal(name, "Online"))
 		return set_property_online(modem, msg, &var);
@@ -1161,7 +1136,8 @@ static DBusMessage *modem_set_property(DBusConnection *conn,
 				return __ofono_error_failed(msg);
 
 			modem->pending = dbus_message_ref(msg);
-			modem->timeout = g_timeout_add_seconds(60,
+			modem->timeout = g_timeout_add_seconds(
+						modem->timeout_hint,
 						set_powered_timeout, modem);
 			return NULL;
 		}
@@ -1193,41 +1169,6 @@ static DBusMessage *modem_set_property(DBusConnection *conn,
 	return __ofono_error_invalid_args(msg);
 }
 
-static DBusMessage *modem_shutdown(DBusConnection *conn,
-		DBusMessage *msg, void *data)
-{
-	struct ofono_modem *modem = data;
-
-	if (modem->driver->modem_shutdown == NULL)
-		return __ofono_error_not_implemented(msg);
-
-	if (modem->pending)
-		return __ofono_error_busy(msg);
-
-	modem->pending = dbus_message_ref(msg);
-	modem->driver->modem_shutdown(modem);
-
-	return dbus_message_new_method_return(msg);
-}
-
-static DBusMessage *modem_reset(DBusConnection *conn,
-		DBusMessage *msg, void *data)
-{
-	struct ofono_modem *modem = data;
-
-	if (modem->driver->modem_reset == NULL)
-		return __ofono_error_not_implemented(msg);
-
-	if (modem->pending)
-		return __ofono_error_busy(msg);
-
-	modem->pending = dbus_message_ref(msg);
-
-	modem->driver->modem_reset(modem);
-
-	return dbus_message_new_method_return(msg);
-}
-
 static const GDBusMethodTable modem_methods[] = {
 	{ GDBUS_METHOD("GetProperties",
 			NULL, GDBUS_ARGS({ "properties", "a{sv}" }),
@@ -1235,10 +1176,6 @@ static const GDBusMethodTable modem_methods[] = {
 	{ GDBUS_ASYNC_METHOD("SetProperty",
 			GDBUS_ARGS({ "property", "s" }, { "value", "v" }),
 			NULL, modem_set_property) },
-	{ GDBUS_ASYNC_METHOD("Shutdown", NULL, NULL,
-	    modem_shutdown) },
-	{ GDBUS_ASYNC_METHOD("Reset", NULL, NULL,
-	    modem_reset) },
 	{ }
 };
 
@@ -1247,23 +1184,6 @@ static const GDBusSignalTable modem_signals[] = {
 			GDBUS_ARGS({ "name", "s" }, { "value", "v" })) },
 	{ }
 };
-
-void ofono_modem_set_powersave(struct ofono_modem *modem, ofono_bool_t powersave)
-{
-	DBusConnection *conn = ofono_dbus_get_connection();
-	dbus_bool_t dbus_powersave = powersave;
-
-	if (modem->powersave == powersave)
-		return;
-
-	modem->powersave = powersave;
-
-	ofono_dbus_signal_property_changed(conn, modem->path,
-					OFONO_MODEM_INTERFACE,
-					"Powersave", DBUS_TYPE_BOOLEAN,
-					&dbus_powersave);
-
-}
 
 void ofono_modem_set_powered(struct ofono_modem *modem, ofono_bool_t powered)
 {
@@ -1371,8 +1291,6 @@ static gboolean trigger_interface_update(void *data)
 
 	modem->interface_update = 0;
 
-	DBG("");
-
 	return FALSE;
 }
 
@@ -1410,7 +1328,6 @@ void ofono_modem_add_interface(struct ofono_modem *modem,
 {
 	const char *feature;
 
-	DBG("Add interface: %s", interface);
 	modem->interface_list = g_slist_prepend(modem->interface_list,
 						g_strdup(interface));
 
@@ -1423,7 +1340,6 @@ void ofono_modem_add_interface(struct ofono_modem *modem,
 		return;
 
 	modem->interface_update = g_idle_add(trigger_interface_update, modem);
-	DBG("Interface: %s added", interface);
 }
 
 void ofono_modem_remove_interface(struct ofono_modem *modem,
@@ -1931,6 +1847,12 @@ ofono_bool_t ofono_modem_get_boolean(struct ofono_modem *modem, const char *key)
 	return value;
 }
 
+void ofono_modem_set_powered_timeout_hint(struct ofono_modem *modem,
+							unsigned int seconds)
+{
+	modem->timeout_hint = seconds;
+}
+
 void ofono_modem_set_name(struct ofono_modem *modem, const char *name)
 {
 	if (modem->name)
@@ -1992,6 +1914,7 @@ struct ofono_modem *ofono_modem_create(const char *name, const char *type)
 	modem->driver_type = g_strdup(type);
 	modem->properties = g_hash_table_new_full(g_str_hash, g_str_equal,
 						g_free, unregister_property);
+	modem->timeout_hint = DEFAULT_POWERED_TIMEOUT;
 
 	g_modem_list = g_slist_prepend(g_modem_list, modem);
 
@@ -2186,18 +2109,8 @@ static void modem_unregister(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 
-	if (modem->powered == TRUE && modem->driver &&
-		modem->driver->powersave)
-		modem->driver->powersave(modem, TRUE);
-
-	if (modem->atoms)
-		flush_atoms(modem, MODEM_STATE_POWER_OFF);
-
 	if (modem->powered == TRUE)
 		set_powered(modem, FALSE);
-
-	if(modem->driver && modem->driver->modem_shutdown)
-		modem->driver->modem_shutdown(modem);
 
 	__ofono_watchlist_free(modem->atom_watches);
 	modem->atom_watches = NULL;
@@ -2340,7 +2253,6 @@ void ofono_modem_driver_unregister(const struct ofono_modem_driver *d)
 void __ofono_modem_shutdown(void)
 {
 	struct ofono_modem *modem;
-	ofono_bool_t powered_modems = FALSE;
 	GSList *l;
 
 	powering_down = TRUE;
@@ -2354,13 +2266,11 @@ void __ofono_modem_shutdown(void)
 		if (modem->powered == FALSE && modem->powered_pending == FALSE)
 			continue;
 
-		if (modem->driver && modem->driver->powersave)
-			modem->driver->powersave(modem, TRUE);
-
-		powered_modems = TRUE;
+		if (set_powered(modem, FALSE) == -EINPROGRESS)
+			modems_remaining += 1;
 	}
 
-	if (powered_modems == FALSE)
+	if (modems_remaining == 0)
 		__ofono_exit();
 }
 

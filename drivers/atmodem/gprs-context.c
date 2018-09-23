@@ -23,7 +23,6 @@
 #include <config.h>
 #endif
 
-#define _GNU_SOURCE
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -158,7 +157,10 @@ static gboolean setup_ppp(struct ofono_gprs_context *gc)
 		g_at_ppp_set_debug(gcd->ppp, ppp_debug, "PPP");
 
 	g_at_ppp_set_auth_method(gcd->ppp, gcd->auth_method);
-	g_at_ppp_set_credentials(gcd->ppp, gcd->username, gcd->password);
+
+	if (gcd->auth_method != G_AT_PPP_AUTH_METHOD_NONE)
+		g_at_ppp_set_credentials(gcd->ppp, gcd->username,
+								gcd->password);
 
 	/* set connect and disconnect callbacks */
 	g_at_ppp_set_connect_function(gcd->ppp, ppp_connect, gc);
@@ -247,7 +249,7 @@ static void at_gprs_activate_primary(struct ofono_gprs_context *gc,
 	memcpy(gcd->username, ctx->username, sizeof(ctx->username));
 	memcpy(gcd->password, ctx->password, sizeof(ctx->password));
 
-	/* We only support CHAP and PAP */
+	/* We support CHAP, PAP and NONE */
 	switch (ctx->auth_method) {
 	case OFONO_GPRS_AUTH_METHOD_CHAP:
 		gcd->auth_method = G_AT_PPP_AUTH_METHOD_CHAP;
@@ -255,8 +257,11 @@ static void at_gprs_activate_primary(struct ofono_gprs_context *gc,
 	case OFONO_GPRS_AUTH_METHOD_PAP:
 		gcd->auth_method = G_AT_PPP_AUTH_METHOD_PAP;
 		break;
-	default:
-		goto error;
+	case OFONO_GPRS_AUTH_METHOD_NONE:
+		gcd->auth_method = G_AT_PPP_AUTH_METHOD_NONE;
+		memset(gcd->username, 0, sizeof(gcd->username));
+		memset(gcd->password, 0, sizeof(gcd->password));
+		break;
 	}
 
 	gcd->state = STATE_ENABLING;
@@ -305,7 +310,8 @@ static void at_gprs_activate_primary(struct ofono_gprs_context *gc,
 						",\"PAP:%s\"", ctx->apn);
 				break;
 			case OFONO_GPRS_AUTH_METHOD_NONE:
-			default:
+				snprintf(buf + len, sizeof(buf) - len - 3,
+						",\"%s\"", ctx->apn);
 				break;
 			}
 			break;
@@ -487,7 +493,7 @@ static void at_gprs_context_remove(struct ofono_gprs_context *gc)
 	g_free(gcd);
 }
 
-static struct ofono_gprs_context_driver driver = {
+static const struct ofono_gprs_context_driver driver = {
 	.name			= "atmodem",
 	.probe			= at_gprs_context_probe,
 	.remove			= at_gprs_context_remove,

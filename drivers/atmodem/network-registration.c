@@ -25,7 +25,6 @@
 #include <config.h>
 #endif
 
-#define _GNU_SOURCE
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -229,6 +228,10 @@ static void at_creg_cb(gboolean ok, GAtResult *result, gpointer user_data)
 
 	if ((status == 1 || status == 5) && (tech == -1))
 		tech = nd->tech;
+
+	/* 6-10 is EUTRAN, with 8 being emergency bearer case */
+	if (status > 5 && tech == -1)
+		tech = ACCESS_TECHNOLOGY_EUTRAN;
 
 	cb(&error, status, lac, ci, tech, cbd->data);
 }
@@ -2112,9 +2115,8 @@ static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		g_at_chat_register(nd->chat, "+CESQ:", cesq_notify,
 						FALSE, netreg, NULL);
 
-		if (!nd->csq_source) /* just in case it has already be called, to avoid a memory leak */
-			//nd->csq_source = g_timeout_add_seconds(10, gemalto_csq_query, netreg);
-			nd->csq_source = g_timeout_add_seconds(120, gemalto_csq_query, netreg);
+		if (!nd->csq_source) /* in case it has already be called, to avoid a memory leak */
+			nd->csq_source = g_timeout_add_seconds(60, gemalto_csq_query, netreg);
 
 		break;
 	case OFONO_VENDOR_NOKIA:
@@ -2222,7 +2224,7 @@ static void at_netreg_remove(struct ofono_netreg *netreg)
 	g_free(nd);
 }
 
-static struct ofono_netreg_driver driver = {
+static const struct ofono_netreg_driver driver = {
 	.name				= "atmodem",
 	.probe				= at_netreg_probe,
 	.remove				= at_netreg_remove,

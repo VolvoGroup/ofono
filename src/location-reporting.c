@@ -64,6 +64,7 @@ static const char *location_reporting_type_to_string(
 
 static DBusMessage *location_reporting_get_properties(DBusConnection *conn,
 						DBusMessage *msg, void *data)
+
 {
 	struct ofono_location_reporting *lr = data;
 	DBusMessage *reply;
@@ -73,7 +74,7 @@ static DBusMessage *location_reporting_get_properties(DBusConnection *conn,
 	dbus_bool_t value;
 
 	reply = dbus_message_new_method_return(msg);
-	if (lr==NULL || reply == NULL)
+	if (reply == NULL)
 		return NULL;
 
 	dbus_message_iter_init_append(reply, &iter);
@@ -87,23 +88,9 @@ static DBusMessage *location_reporting_get_properties(DBusConnection *conn,
 	type = location_reporting_type_to_string(lr->driver->type);
 	ofono_dbus_dict_append(&dict, "Type", DBUS_TYPE_STRING, &type);
 
-	if (lr->driver && lr->driver->get_properties)
-		lr->driver->get_properties(lr, &dict);
-
 	dbus_message_iter_close_container(&iter, &dict);
 
 	return reply;
-}
-
-static DBusMessage *location_reporting_set_property(DBusConnection *conn,
-					DBusMessage *msg, void *data)
-{
-	struct ofono_location_reporting *lr = data;
-
-	if (!lr || !lr->driver || !lr->driver->set_property)
-		return __ofono_error_not_available(msg);
-
-	return lr->driver->set_property(lr, msg);
 }
 
 static void client_remove(struct ofono_location_reporting *lr)
@@ -256,24 +243,11 @@ static const GDBusMethodTable location_reporting_methods[] = {
 	{ GDBUS_METHOD("GetProperties",
 			NULL, GDBUS_ARGS({ "properties", "a{sv}" }),
 			location_reporting_get_properties) },
-	{ GDBUS_ASYNC_METHOD("SetProperty",
-			GDBUS_ARGS({ "property", "s" }, { "value", "v" }),
-			NULL, location_reporting_set_property) },
 	{ GDBUS_ASYNC_METHOD("Request",
 			NULL, GDBUS_ARGS({ "fd", "h" }),
 			location_reporting_request) },
 	{ GDBUS_ASYNC_METHOD("Release", NULL, NULL,
-			location_reporting_release) },
-	{ }
-};
-
-static const GDBusMethodTable location_reporting_methods_reduced[] = {
-	{ GDBUS_METHOD("GetProperties",
-			NULL, GDBUS_ARGS({ "properties", "a{sv}" }),
-			location_reporting_get_properties) },
-	{ GDBUS_ASYNC_METHOD("SetProperty",
-			GDBUS_ARGS({ "property", "s" }, { "value", "v" }),
-			NULL, location_reporting_set_property) },
+					location_reporting_release) },
 	{ }
 };
 
@@ -351,6 +325,10 @@ struct ofono_location_reporting *ofono_location_reporting_create(
 	if (driver == NULL)
 		return NULL;
 
+	/* Only D-Bus >= 1.3 supports fd-passing */
+	if (DBUS_TYPE_UNIX_FD == -1)
+		return NULL;
+
 	lr = g_try_new0(struct ofono_location_reporting, 1);
 	if (lr == NULL)
 		return NULL;
@@ -381,31 +359,15 @@ void ofono_location_reporting_register(struct ofono_location_reporting *lr)
 	struct ofono_modem *modem = __ofono_atom_get_modem(lr->atom);
 	const char *path = __ofono_atom_get_path(lr->atom);
 
-	/* Only D-Bus >= 1.3 supports fd-passing */
-	if (DBUS_TYPE_UNIX_FD == -1) {
-		if (!g_dbus_register_interface(conn, path,
-					OFONO_LOCATION_REPORTING_INTERFACE,
-					location_reporting_methods_reduced,
-					location_reporting_signals,
-					NULL, lr, NULL)) {
-			ofono_error("Could not create %s interface",
-					OFONO_LOCATION_REPORTING_INTERFACE);
-			return;
-		}
-	} else {
-		if (!g_dbus_register_interface(conn, path,
+	if (!g_dbus_register_interface(conn, path,
 					OFONO_LOCATION_REPORTING_INTERFACE,
 					location_reporting_methods,
 					location_reporting_signals,
 					NULL, lr, NULL)) {
-			ofono_error("Could not create %s interface",
+		ofono_error("Could not create %s interface",
 					OFONO_LOCATION_REPORTING_INTERFACE);
-			return;
-		}
-
+		return;
 	}
-
-
 
 	ofono_modem_add_interface(modem, OFONO_LOCATION_REPORTING_INTERFACE);
 	__ofono_atom_register(lr->atom, location_reporting_unregister);

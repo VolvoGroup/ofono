@@ -223,65 +223,6 @@ static gboolean gprs_context_string_to_type(const char *str,
 	return FALSE;
 }
 
-static const char *gprs_proto_to_string(enum ofono_gprs_proto proto)
-{
-	switch (proto) {
-	case OFONO_GPRS_PROTO_IP:
-		return "ip";
-	case OFONO_GPRS_PROTO_IPV6:
-		return "ipv6";
-	case OFONO_GPRS_PROTO_IPV4V6:
-		return "dual";
-	};
-
-	return NULL;
-}
-
-static gboolean gprs_proto_from_string(const char *str,
-					enum ofono_gprs_proto *proto)
-{
-	if (g_str_equal(str, "ip")) {
-		*proto = OFONO_GPRS_PROTO_IP;
-		return TRUE;
-	} else if (g_str_equal(str, "ipv6")) {
-		*proto = OFONO_GPRS_PROTO_IPV6;
-		return TRUE;
-	} else if (g_str_equal(str, "dual")) {
-		*proto = OFONO_GPRS_PROTO_IPV4V6;
-		return TRUE;
-	}
-
-	return FALSE;
-}
-
-static const char *gprs_auth_method_to_string(enum ofono_gprs_auth_method auth)
-{
-	switch (auth) {
-	case OFONO_GPRS_AUTH_METHOD_CHAP:
-		return "chap";
-	case OFONO_GPRS_AUTH_METHOD_PAP:
-		return "pap";
-	default:
-		return NULL;
-	};
-
-	return NULL;
-}
-
-static gboolean gprs_auth_method_from_string(const char *str,
-					enum ofono_gprs_auth_method *auth)
-{
-	if (g_str_equal(str, "chap")) {
-		*auth = OFONO_GPRS_AUTH_METHOD_CHAP;
-		return TRUE;
-	} else if (g_str_equal(str, "pap")) {
-		*auth = OFONO_GPRS_AUTH_METHOD_PAP;
-		return TRUE;
-	}
-
-	return FALSE;
-}
-
 static unsigned int gprs_cid_alloc(struct ofono_gprs *gprs)
 {
 	return idmap_alloc(gprs->cid_map);
@@ -675,7 +616,7 @@ static void pri_ifupdown(const char *interface, ofono_bool_t active)
 	}
 
 	if (ioctl(sk, SIOCSIFFLAGS, &ifr) < 0)
-		ofono_error("Failed to change interface flags");
+		ofono_error("Failed to change interface flags: %s",strerror(errno));
 
 done:
 	close(sk);
@@ -930,7 +871,6 @@ static void pri_activate_callback(const struct ofono_error *error, void *data)
 					ctx->path,
 					OFONO_CONNECTION_CONTEXT_INTERFACE,
 					"Active", DBUS_TYPE_BOOLEAN, &value);
-
 }
 
 static void pri_deactivate_callback(const struct ofono_error *error, void *data)
@@ -1751,7 +1691,7 @@ static void gprs_netreg_update(struct ofono_gprs *gprs)
 		 * For LTE we set attached status only on successful
 		 * context activation.
 		 */
-		return;
+                return;
 
     /*
      * FIXME: This construct doesn't work. Check why! Remove it for now.
@@ -2238,7 +2178,6 @@ static DBusMessage *gprs_remove_context(DBusConnection *conn,
 	}
 
 	DBG("Unregistering context: %s", ctx->path);
-	release_context(ctx);
 	context_dbus_unregister(ctx);
 	gprs->contexts = g_slist_remove(gprs->contexts, ctx);
 
