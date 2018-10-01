@@ -536,10 +536,7 @@ static const struct codepoint guj_ext_gsm[] = {
 };
 
 static const struct codepoint guj_ext_unicode[] = {
-<<<<<<< HEAD
 	{ 0x000C, 0x1B0A },
-=======
->>>>>>> util: add bengali and gujrati sms alphabets
 	{ 0x0022, 0x1B05 },
 	{ 0x0023, 0x1B17 },
 	{ 0x0024, 0x1B02 },
@@ -611,7 +608,6 @@ static const struct codepoint guj_ext_unicode[] = {
 	{ 0x20AC, 0x1B65 }
 };
 
-<<<<<<< HEAD
 /* Appendix A.2.6. in 3GPP TS23.038 V.8.2.0 */
 static const struct codepoint hin_ext_gsm[] = {
 	{ 0x00, 0x0040 },
@@ -1952,8 +1948,6 @@ static const struct codepoint urd_ext_unicode[] = {
 	{ 0x20AC, 0x1B65 }
 };
 
-=======
->>>>>>> util: add bengali and gujrati sms alphabets
 /* Used for conversion of GSM to Unicode */
 static const unsigned short def_gsm[] = {
 	0x0040, 0x00A3, 0x0024, 0x00A5, 0x00E8, 0x00E9, 0x00F9, 0x00EC,
@@ -2226,7 +2220,6 @@ static const struct codepoint guj_unicode[] = {
 	{ 0x0AF1, 0x7F }
 };
 
-<<<<<<< HEAD
 /* Appendix A.3.6 in 3GPP TS23.038 */
 static const unsigned short hin_gsm[] = {
 	0x0901, 0x0902, 0x0903, 0x0905, 0x0906, 0x0907, 0x0908, 0x0909,
@@ -2650,8 +2643,6 @@ const struct codepoint urd_unicode[] = {
 	{ 0x06CC, 0x59 }, { 0x06D0, 0x5A }, { 0x06D2, 0x5B }, { 0x06D5, 0x55 }
 };
 
-=======
->>>>>>> util: add bengali and gujrati sms alphabets
 static int compare_codepoints(const void *a, const void *b)
 {
 	const struct codepoint *ca = (const struct codepoint *) a;
@@ -2733,7 +2724,6 @@ static gboolean populate_locking_shift(struct conversion_table *t,
                 t->locking_u = guj_unicode;
                 t->locking_len_u = TABLE_SIZE(guj_unicode);
                 return TRUE;
-<<<<<<< HEAD
 
 	case GSM_DIALECT_HINDI:
 		t->locking_g = hin_gsm;
@@ -2782,8 +2772,6 @@ static gboolean populate_locking_shift(struct conversion_table *t,
 		t->locking_u = urd_unicode;
 		t->locking_len_u = TABLE_SIZE(urd_unicode);
 		return TRUE;
-=======
->>>>>>> util: add bengali and gujrati sms alphabets
         }
 
 	return FALSE;
@@ -2834,7 +2822,6 @@ static gboolean populate_single_shift(struct conversion_table *t,
                 t->single_u = guj_ext_unicode;
                 t->single_len_u = TABLE_SIZE(guj_ext_unicode);
                 return TRUE;
-<<<<<<< HEAD
 
 	case GSM_DIALECT_HINDI:
 		t->single_g = hin_ext_gsm;
@@ -2891,8 +2878,6 @@ static gboolean populate_single_shift(struct conversion_table *t,
 		t->single_u = urd_ext_unicode;
 		t->single_len_u = TABLE_SIZE(urd_ext_unicode);
 		return TRUE;
-=======
->>>>>>> util: add bengali and gujrati sms alphabets
         }
 
 	return FALSE;
