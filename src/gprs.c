@@ -1753,16 +1753,20 @@ static void gprs_netreg_update(struct ofono_gprs *gprs)
 		 */
 		return;
 
-//	if (gprs->driver_attached == attach)
-//		return;
-//
-//  FIXME: This construct doesn't work for netcon!
-//	if (gprs->flags & GPRS_FLAG_ATTACHING) {
-//		gprs->flags |= GPRS_FLAG_RECHECK;
-//		return;
-//	}
-//
-	gprs->flags |= GPRS_FLAG_ATTACHING;
+    /*
+     * FIXME: This construct doesn't work. Check why! Remove it for now.
+     *
+	if (gprs->driver_attached == attach)
+		return;
+	*/
+
+	if (gprs->flags & GPRS_FLAG_ATTACHING) {
+		gprs->flags |= GPRS_FLAG_RECHECK;
+		return;
+	}
+
+	if (attach)
+		gprs->flags |= GPRS_FLAG_ATTACHING;
 
 	gprs->driver_attached = attach;
 	gprs->driver->set_attached(gprs, attach, gprs_attach_callback, gprs);
