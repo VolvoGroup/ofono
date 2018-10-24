@@ -1104,6 +1104,8 @@ static void mbim_device_closed(void *user_data)
 }
 #endif
 
+static void gemalto_powersave(struct ofono_modem *modem, ofono_bool_t enable);
+
 static int gemalto_initialize(void *user_data)
 {
 	struct ofono_modem *modem = user_data;
@@ -1183,6 +1185,9 @@ static int gemalto_initialize(void *user_data)
 	g_at_chat_send(data->app, "AT^SAIC?", NULL, saic_probe, modem, NULL);
 	g_at_chat_send(data->app, "AT^SGAUTH?", NULL, sgauth_probe, modem,
 									NULL);
+
+  // make modem settings match ofono start value (implicit)
+	gemalto_powersave(modem, FALSE);
 
 	data->init_done = TRUE;
 
