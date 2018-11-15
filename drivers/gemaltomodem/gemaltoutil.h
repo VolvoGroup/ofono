@@ -2,7 +2,6 @@
  *
  *  oFono - Open Source Telephony
  *
- *  Copyright (C) 2017 Vincent Cesson. All rights reserved.
  *  Copyright (C) 2018 Gemalto M2M
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -20,23 +19,12 @@
  *
  */
 
-#include <drivers/atmodem/atutil.h>
-#include "gemaltoutil.h"
+struct ofono_modem;
 
-extern void gemalto_location_reporting_init();
-extern void gemalto_location_reporting_exit();
+char *gemalto_get_auth_command(struct ofono_modem *modem, int cid,
+				enum ofono_gprs_auth_method auth_method,
+				const char *username, const char *password);
 
-extern void gemalto_voicecall_init();
-extern void gemalto_voicecall_exit();
 
-extern void gemalto_lte_init();
-extern void gemalto_lte_exit();
-
-extern void gemalto_gprs_context_swwan_blocking_init();
-extern void gemalto_gprs_context_swwan_blocking_exit();
-
-extern void gemalto_gprs_context_swwan_init();
-extern void gemalto_gprs_context_swwan_exit();
-
-extern void gemalto_gprs_context_mbim_init();
-extern void gemalto_gprs_context_mbim_exit();
+char *gemalto_get_cgdcont_command(struct ofono_modem *modem, guint cid,
+				enum ofono_gprs_proto proto, const char *apn);
