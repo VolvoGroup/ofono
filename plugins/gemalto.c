@@ -56,12 +56,10 @@
 #include <drivers/atmodem/vendor.h>
 #include <string.h>
 
-#ifdef HAVE_ELL
 #include <ell/ell.h>
 #include <drivers/mbimmodem/mbim.h>
 #include <drivers/mbimmodem/mbim-message.h>
 #include <drivers/mbimmodem/mbim-desc.h>
-#endif
 
 #include <drivers/qmimodem/qmi.h>
 #include <src/storage.h>
@@ -1228,7 +1226,6 @@ static void gemalto_hardware_control_enable(struct ofono_modem *modem)
  * modem plugin
  ******************************************************************************/
 
-#ifdef HAVE_ELL
 static int mbim_parse_descriptors(struct gemalto_data *md, const char *file)
 {
 	void *data;
@@ -1278,7 +1275,6 @@ static int mbim_probe(struct ofono_modem *modem, struct gemalto_data *data)
 
 	return 0;
 }
-#endif
 
 static int gemalto_probe(struct ofono_modem *modem)
 {
@@ -1288,10 +1284,7 @@ static int gemalto_probe(struct ofono_modem *modem)
 	if (data == NULL)
 		return -ENOMEM;
 
-#ifdef HAVE_ELL
 	mbim_probe(modem, data);
-#endif
-
 	ofono_modem_set_data(modem, data);
 
 	return 0;
@@ -1342,11 +1335,9 @@ static void gemalto_remove(struct ofono_modem *modem)
 		return;
 	}
 
-#ifdef HAVE_ELL
 	if (data->mbim == STATE_PRESENT) {
 		mbim_device_shutdown(data->device);
 	}
-#endif
 
 	if (data->qmi == STATE_PRESENT) {
 		qmi_device_unref(data->device);
@@ -1858,7 +1849,6 @@ static int gemalto_enable_app(struct ofono_modem *modem)
 	return -EINPROGRESS;
 }
 
-#ifdef HAVE_ELL
 static void mbim_device_caps_info_cb(struct mbim_message *message, void *user)
 {
 	struct ofono_modem *modem = user;
@@ -2019,7 +2009,6 @@ other_devices:
 
 	return gemalto_enable_app(modem);
 }
-#endif
 
 static void qmi_enable_cb(void *user_data)
 {
@@ -2301,10 +2290,8 @@ static int gemalto_enable(struct ofono_modem *modem)
 	if (data->init_done) {
 		gemalto_set_cfun(data->app, 4, modem);
 
-#ifdef HAVE_ELL
 		if (data->mbim != STATE_ABSENT)
 			mbim_enable(modem);
-#endif
 
 		return -EINPROGRESS;
 	}
@@ -2333,21 +2320,17 @@ static int gemalto_enable(struct ofono_modem *modem)
 		ofono_modem_set_string(modem, "Diag", NULL);
 	}
 
-#ifdef HAVE_ELL
 	/* pre-configure MBIM network interface */
 	if (m == 0x62 || m == 0x5d || m == 0x65) {
 		data->mbim = STATE_PROBE;
 	}
-#endif
 
 	set_from_model(data);
 
-#ifdef HAVE_ELL
 	if ((data->mbim == STATE_PROBE) && ctl && net) {
 		data->init_waiting_time = 3;
 		return mbim_enable(modem);
 	}
-#endif
 
 	if ((data->qmi == STATE_PROBE) && ctl && net) {
 		data->init_waiting_time = 10;
@@ -2357,64 +2340,15 @@ static int gemalto_enable(struct ofono_modem *modem)
 	return gemalto_enable_app(modem);
 }
 
-#ifdef HAVE_ELL
-static void mbim_deact_context0_blind(struct ofono_modem *modem)
-{
-	unsigned int cid = 0;
-	struct gemalto_data *data = ofono_modem_get_data(modem);
-	struct mbim_message *message;
-
-	return;
-
-	message = mbim_message_new(mbim_uuid_basic_connect,
-					MBIM_CID_CONNECT,
-					MBIM_COMMAND_TYPE_SET);
-	mbim_message_set_arguments(message, "uusssuuu16y",
-					cid, 0, NULL, NULL, NULL, 0, 0, 0,
-					mbim_context_type_internet);
-
-	if (mbim_device_send(data->device, 101 /*GPRS_CONTEXT_GROUP*/, message,
-				NULL, NULL, NULL) > 0)
-		return;
-
-	mbim_message_unref(message);
-}
-
-static int mbim_sim_probe(struct ofono_modem *modem)
-{
-	struct gemalto_data *data = ofono_modem_get_data(modem);
-	struct mbim_message *message;
-	/* SIM_GROUP is defined in mbimmodem.h that cannot be included */
-	uint32_t SIM_GROUP = 1;
-
-	mbim_deact_context0_blind(modem);
-
-	message = mbim_message_new(mbim_uuid_basic_connect,
-					MBIM_CID_SUBSCRIBER_READY_STATUS,
-					MBIM_COMMAND_TYPE_QUERY);
-	if (!message)
-		return -ENOMEM;
-
-	mbim_message_set_arguments(message, "");
-
-	if (!mbim_device_send(data->device, SIM_GROUP, message,
-				NULL, NULL, NULL)) {
-		mbim_message_unref(message);
-		return -EIO;
-	}
-	return 0;
-}
-#endif
-
 static void set_online_cb(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct cb_data *cbd = user_data;
 	ofono_modem_online_cb_t cb = cbd->cb;
+	struct gemalto_data *data = ofono_modem_get_data(cbd->user);
 	struct ofono_error error;
-
 	decode_at_error(&error, g_at_result_final_response(result));
-
 	cb(&error, cbd->data);
+	data->hold_remove = FALSE;
 }
 
 static void gemalto_set_online_serial(struct ofono_modem *modem,
@@ -2424,6 +2358,8 @@ static void gemalto_set_online_serial(struct ofono_modem *modem,
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 	struct cb_data *cbd = cb_data_new(cb, user_data);
 	char const *command;
+
+	cbd->user = modem;
 
 	DBG("modem %p %s", modem, online ? "online" : "offline");
 
@@ -2445,6 +2381,7 @@ static void gemalto_set_online_serial(struct ofono_modem *modem,
 
 	CALLBACK_WITH_FAILURE(cb, cbd->data);
 	g_free(cbd);
+	data->hold_remove = FALSE;
 }
 
 static void gemalto_set_online(struct ofono_modem *modem, ofono_bool_t online,
@@ -2453,6 +2390,9 @@ static void gemalto_set_online(struct ofono_modem *modem, ofono_bool_t online,
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 	struct cb_data *cbd = cb_data_new(cb, user_data);
 	char const *cmd = online ? "AT+CFUN=1" : "AT+CFUN=4";
+
+	data->hold_remove = TRUE;
+	cbd->user = modem;
 
 	if (data->conn == GEMALTO_CONNECTION_SERIAL) {
 		gemalto_set_online_serial(modem, online, cb, user_data);
@@ -2470,8 +2410,8 @@ static void gemalto_set_online(struct ofono_modem *modem, ofono_bool_t online,
 		return;
 
 	CALLBACK_WITH_FAILURE(cb, cbd->data);
-
 	g_free(cbd);
+	data->hold_remove = FALSE;
 }
 
 static void gemalto_pre_sim(struct ofono_modem *modem)
@@ -2479,36 +2419,58 @@ static void gemalto_pre_sim(struct ofono_modem *modem)
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 
 	DBG("%p", modem);
-
+	data->hold_remove = TRUE;
 	gemalto_exec_stored_cmd(modem, "pre_sim");
-
 	ofono_location_reporting_create(modem, 0, "gemaltomodem", data->app);
-
 	data->sim = ofono_sim_create(modem, OFONO_VENDOR_GEMALTO,
 		"atmodem", data->app);
 
 	if (data->sim && data->have_sim == TRUE)
 		ofono_sim_inserted_notify(data->sim, TRUE);
+
+	data->hold_remove = FALSE;
+}
+static int mbim_sim_probe(void *device)
+{
+	struct mbim_message *message;
+	/* SIM_GROUP is defined in mbimmodem.h that cannot be included */
+	uint32_t SIM_GROUP = 1;
+
+	message = mbim_message_new(mbim_uuid_basic_connect,
+					MBIM_CID_SUBSCRIBER_READY_STATUS,
+					MBIM_COMMAND_TYPE_QUERY);
+	if (!message)
+		return -ENOMEM;
+
+	mbim_message_set_arguments(message, "");
+
+	if (!mbim_device_send(device, SIM_GROUP, message,
+				NULL, NULL, NULL)) {
+		mbim_message_unref(message);
+		return -EIO;
+	}
+	return 0;
 }
 
 static void gemalto_post_sim(struct ofono_modem *modem)
 {
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 
+	data->hold_remove = TRUE;
 	gemalto_exec_stored_cmd(modem, "post_sim");
 
-#ifdef HAVE_ELL
 	if (data->mbim == STATE_PRESENT) {
 		/* very important to set the interface ready */
-		mbim_sim_probe( modem);
+		mbim_sim_probe(data->device);
 	}
-#endif
 
 	ofono_phonebook_create(modem, 0, "atmodem", data->app);
 	ofono_modem_set_integer(modem, "GemaltoAuthType", data->auth_syntax);
 
 	if (data->has_lte)
 		ofono_lte_create(modem, 0, "gemaltomodem", data->app);
+
+	data->hold_remove = FALSE;
 }
 
 static void cgdcont17_probe(gboolean ok, GAtResult *result, gpointer user_data)
@@ -2555,7 +2517,6 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 
 	// TODO: the ofono_gprs_create may require gemaltomodem instead of atmodem
 
-#ifdef HAVE_ELL
 	if (data->mbim == STATE_PRESENT) {
 		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
 								data->app);
@@ -2568,9 +2529,7 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 			gc = ofono_gprs_context_create(modem, 0, "gemaltomodemmbim", &comp);
 		} else /* model == 0x5d */
 			gc = ofono_gprs_context_create(modem, 0, "mbim", data->device);
-	} else
-#endif
-		if (data->qmi == STATE_PRESENT) {
+	} else if (data->qmi == STATE_PRESENT) {
 		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
 								data->app);
 		// TODO: verify if need be to create the contexts and auth params beforehand
@@ -2662,6 +2621,7 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 		ofono_message_waiting_register(mw);
 
 	ofono_netreg_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
+	data->hold_remove = FALSE;
 }
 
 static int gemalto_post_online_delayed(void *modem)
@@ -2697,14 +2657,15 @@ static int gemalto_post_online_delayed(void *modem)
 
 static void gemalto_post_online(struct ofono_modem *modem)
 {
+	struct gemalto_data *data = ofono_modem_get_data(modem);
 	/*
 	 * in this version of ofono we must wait for SIM 'really-ready'
 	 * can be avoided when capturing the right URCs
 	 */
+	data->hold_remove = TRUE;
 	g_timeout_add_seconds(5, gemalto_post_online_delayed, modem);
 }
 
-#ifdef HAVE_ELL
 static void mbim_radio_off_for_disable(struct mbim_message *message, void *user)
 {
 	struct ofono_modem *modem = user;
@@ -2714,7 +2675,6 @@ static void mbim_radio_off_for_disable(struct mbim_message *message, void *user)
 
 	mbim_device_shutdown(md->device);
 }
-#endif
 
 static int gemalto_disable_serial(struct ofono_modem *modem)
 {
@@ -2739,18 +2699,15 @@ static int gemalto_disable_serial(struct ofono_modem *modem)
 static int gemalto_disable(struct ofono_modem *modem)
 {
 	struct gemalto_data *data = ofono_modem_get_data(modem);
-#ifdef HAVE_ELL
 	struct mbim_message *message;
-#endif
 
 	DBG("%p", modem);
+	data->hold_remove = TRUE;
 
 	if (data->conn == GEMALTO_CONNECTION_SERIAL)
 		return gemalto_disable_serial(modem);
 
-#ifdef HAVE_ELL
 	if (data->mbim == STATE_PRESENT) {
-		mbim_deact_context0_blind(modem);
 		message = mbim_message_new(mbim_uuid_basic_connect,
 						MBIM_CID_RADIO_STATE,
 						MBIM_COMMAND_TYPE_SET);
@@ -2760,19 +2717,17 @@ static int gemalto_disable(struct ofono_modem *modem)
 				mbim_radio_off_for_disable, modem, NULL)==0)
 			mbim_device_closed(modem);
 	}
-#endif
 
 	if (data->app == NULL)
 		return 0;
 
 	gemalto_exec_stored_cmd(modem, "disable");
-
 	gemalto_set_cfun(data->app, 41, modem);
-
+	data->hold_remove = FALSE;
 	return -EINPROGRESS;
 }
 
-static struct ofono_modem_driver gemalto_driver = {
+static const struct ofono_modem_driver gemalto_driver = {
 	.name		= "gemalto",
 	.probe		= gemalto_probe,
 	.remove		= gemalto_remove,
