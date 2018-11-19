@@ -33,12 +33,6 @@
 #include "drivers/mbimmodem/mbim-message.h"
 #include "drivers/mbimmodem/mbim-private.h"
 
-extern void reportfd(int fd);
-
-void reportfd(int fd)
-{
-}
-
 struct message_data {
 	uint32_t tid;
 	const unsigned char *binary;

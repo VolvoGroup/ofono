@@ -1694,7 +1694,7 @@ static void gprs_netreg_update(struct ofono_gprs *gprs)
                 return;
 
     /*
-     * FIXME: This construct doesn't work. Check why! Remove it for now.
+     * TODO: This construct doesn't work. Check why! Remove it for now.
      *
 	if (gprs->driver_attached == attach)
 		return;

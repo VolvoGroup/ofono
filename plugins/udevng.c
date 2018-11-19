@@ -1896,8 +1896,7 @@ static gboolean create_modem(gpointer key, gpointer value, gpointer user_data)
 			ofono_modem_set_string(modem->modem, "SystemPath",
 								syspath);
 			if (ofono_modem_register(modem->modem) < 0) {
-				DBG("could not register modem '%s'",
-								modem->driver);
+				DBG("could not register modem '%s'", modem->driver);
 				return TRUE;
 			}
 

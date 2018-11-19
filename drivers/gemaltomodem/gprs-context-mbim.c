@@ -339,7 +339,7 @@ static void mbim_ip_configuration_cb(struct mbim_message *message, void *user)
 		inet_ntop(AF_INET, &ipv4, buf, sizeof(buf));
 		ofono_gprs_context_set_ipv4_address(gc, buf, TRUE);
 		ofono_gprs_context_set_ipv4_prefix_length(gc, prefix);
-	} else {
+	} else 	if (getenv("OFONO_GEMALTO_ADDRESS_FROM_AT")) {
 		char buf[64];
 
 		/* we try via AT interface */
@@ -350,7 +350,8 @@ static void mbim_ip_configuration_cb(struct mbim_message *message, void *user)
 			return;
 
 		ofono_gprs_context_set_ipv4_address(gc, NULL, FALSE);
-	}
+	} else
+		ofono_gprs_context_set_ipv4_address(gc, NULL, FALSE);
 
 	if (ipv4_config_available & 0x2) { /* IPv4 Gateway info */
 		if (!mbim_message_get_ipv4_address(message,
