@@ -21,6 +21,7 @@
  */
 
 #include <drivers/atmodem/atutil.h>
+#include <ofono/gemalto.h>
 #include "gemaltoutil.h"
 
 extern void gemalto_location_reporting_init();

@@ -44,10 +44,10 @@
 #include "gatchat.h"
 #include "gatresult.h"
 
+#include "gemaltoutil.h"
 #include <ofono/gemalto.h>
 
-static const char *cgpaddr_prefix[] = { "+CGPADDR:", NULL };
-static const char *cgcontrdp_prefix[] = { "+CGCONTRDP:", NULL };
+static const char *none_prefix[] = { NULL };
 
 enum state {
 	STATE_IDLE,
@@ -65,11 +65,6 @@ struct gprs_context_data {
 	void *cb_data;
 	GAtChat *chat;
 	unsigned int at_cid;
-	char address[64];
-	char netmask[64];
-	char gateway[64];
-	char dns1[64];
-	char dns2[64];
 };
 
 static uint32_t proto_to_context_ip_type(enum ofono_gprs_proto proto)
@@ -84,20 +79,6 @@ static uint32_t proto_to_context_ip_type(enum ofono_gprs_proto proto)
 	}
 
 	return 0;
-}
-
-static uint32_t auth_method_to_auth_protocol(enum ofono_gprs_auth_method method)
-{
-	switch (method) {
-	case OFONO_GPRS_AUTH_METHOD_CHAP:
-		return 2; /* MBIMAuthProtocolChap */
-	case OFONO_GPRS_AUTH_METHOD_PAP:
-		return 1; /* MBIMAuthProtocolPap */
-	case OFONO_GPRS_AUTH_METHOD_NONE:
-		return 0; /* MBIMAUthProtocolNone */
-	}
-
-	return 0; /* MBIMAUthProtocolNone */
 }
 
 static void mbim_deactivate_cb(struct mbim_message *message, void *user)
@@ -147,141 +128,6 @@ static void gemalto_gprs_deactivate_primary(struct ofono_gprs_context *gc,
 
 	if (cb)
 		CALLBACK_WITH_FAILURE(cb, data);
-}
-
-static void contrdp_cb(gboolean ok, GAtResult *result, gpointer user_data)
-{
-	struct ofono_gprs_context *gc = user_data;
-	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
-	int cid, bearer_id;
-	const char *apn, *ip_mask, *gw;
-	const char *dns1, *dns2;
-	GAtResultIter iter;
-	gboolean found = FALSE;
-	struct ofono_modem *modem;
-	const char *interface;
-	const char *dns[3];
-
-
-	DBG("ok %d", ok);
-
-	if (!ok) {
-		DBG("Unable to get context dynamic paramerers");
-		goto skip;
-	}
-
-	g_at_result_iter_init(&iter, result);
-
-	while (g_at_result_iter_next(&iter, "+CGCONTRDP:")) {
-		if (!g_at_result_iter_next_number(&iter, &cid))
-			goto skip;
-		if (!g_at_result_iter_next_number(&iter, &bearer_id))
-			goto skip;
-		if (!g_at_result_iter_next_string(&iter, &apn))
-			goto skip;
-		if (!g_at_result_iter_next_string(&iter, &ip_mask))
-			goto skip;
-		if (!g_at_result_iter_next_string(&iter, &gw))
-			goto skip;
-		if (!g_at_result_iter_next_string(&iter, &dns1))
-			goto skip;
-		if (!g_at_result_iter_next_string(&iter, &dns2))
-			goto skip;
-
-		if ((unsigned int) cid == gcd->active_context) {
-			found = TRUE;
-
-			/* if it was already set by CGPADDR, we keep it */
-			if (strcmp(gcd->address, "") != 0)
-				strncpy(gcd->netmask,
-					&ip_mask[strlen(gcd->address) + 1],
-					sizeof(gcd->netmask));
-
-			strncpy(gcd->gateway, gw, sizeof(gcd->gateway));
-			strncpy(gcd->dns1, dns1, sizeof(gcd->dns1));
-			strncpy(gcd->dns2, dns2, sizeof(gcd->dns2));
-		}
-	}
-
-	if (found == FALSE)
-		goto skip;
-
-	ofono_info("MASK: %s", gcd->netmask);
-	ofono_info("GW: %s", gcd->gateway);
-	ofono_info("DNS: %s, %s", gcd->dns1, gcd->dns2);
-
-	dns[0] = gcd->dns1;
-	dns[1] = gcd->dns2;
-	dns[2] = 0;
-
-	ofono_gprs_context_set_ipv4_address(gc, gcd->address, TRUE);
-	ofono_gprs_context_set_ipv4_netmask(gc, gcd->netmask);
-	ofono_gprs_context_set_ipv4_gateway(gc, gcd->gateway);
-	ofono_gprs_context_set_ipv4_dns_servers(gc, dns);
-
-skip:
-	gcd->state = STATE_ACTIVE;
-	modem = ofono_gprs_context_get_modem(gc);
-	interface = ofono_modem_get_string(modem, "NetworkInterface");
-	ofono_gprs_context_set_interface(gc, interface);
-
-	if (*gcd->address) {
-		ofono_info("IP: %s", gcd->address);
-		ofono_gprs_context_set_ipv4_address(gc, gcd->address, TRUE);
-	} else {
-		/* DHCP in this case */
-		ofono_gprs_context_set_ipv4_address(gc, NULL, FALSE); /* DHCP */
-	}
-
-	CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
-	gcd->cb = NULL;
-	gcd->cb_data = NULL;
-}
-
-static void address_cb(gboolean ok, GAtResult *result, gpointer user_data)
-{
-	struct ofono_gprs_context *gc = user_data;
-	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
-	int cid;
-	const char *address;
-	char buf[64];
-	GAtResultIter iter;
-
-	DBG("ok %d", ok);
-
-	memset(gcd->address, 0, sizeof(gcd->address));
-
-	if (!ok) {
-		DBG("Unable to get context address");
-		goto skip;
-	}
-
-	g_at_result_iter_init(&iter, result);
-
-	// TODO: define the cid properly and uncomment the lines below.
-	// as fallback, get the first IP that shows up
-
-	while (g_at_result_iter_next(&iter, "+CGPADDR:")) {
-
-		if (!g_at_result_iter_next_number(&iter, &cid))
-			continue;
-
-	//	if ((unsigned int) cid != gcd->active_context)
-	//		continue;
-
-		if (!g_at_result_iter_next_string(&iter, &address))
-			continue;
-
-		strncpy(gcd->address, address, sizeof(gcd->address));
-		break; // we got an address, we are happy
-	}
-
-skip:
-
-	sprintf(buf, "AT+CGCONTRDP"); // ask for all, then filter later
-	if (g_at_chat_send(gcd->chat, buf, cgcontrdp_prefix,
-					contrdp_cb, gc, NULL) > 0)
-		return;
 }
 
 static void mbim_ip_configuration_cb(struct mbim_message *message, void *user)
@@ -339,17 +185,6 @@ static void mbim_ip_configuration_cb(struct mbim_message *message, void *user)
 		inet_ntop(AF_INET, &ipv4, buf, sizeof(buf));
 		ofono_gprs_context_set_ipv4_address(gc, buf, TRUE);
 		ofono_gprs_context_set_ipv4_prefix_length(gc, prefix);
-	} else 	if (getenv("OFONO_GEMALTO_ADDRESS_FROM_AT")) {
-		char buf[64];
-
-		/* we try via AT interface */
-		sprintf(buf, "AT+CGPADDR"); // ask for all, then filter later
-
-		if (g_at_chat_send(gcd->chat, buf, cgpaddr_prefix,
-						address_cb, gc, NULL) > 0)
-			return;
-
-		ofono_gprs_context_set_ipv4_address(gc, NULL, FALSE);
 	} else
 		ofono_gprs_context_set_ipv4_address(gc, NULL, FALSE);
 
@@ -509,47 +344,62 @@ static void gemalto_gprs_activate_primary(struct ofono_gprs_context *gc,
 				const struct ofono_gprs_primary_context *ctx,
 				ofono_gprs_context_cb_t cb, void *data)
 {
+	struct ofono_modem *modem = ofono_gprs_context_get_modem(gc);
 	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
 	struct mbim_message *message;
-	const char *username = NULL;
-	const char *password = NULL;
+	char *buf_apn;
+	char *buf_auth;
+	char mbim_apn[101];
 
 	DBG("cid %u", ctx->cid);
 
-	// TODO: add at+cgdaddr and at^sgauth commands here
-
-	gcd->state = STATE_ENABLING;
+	gcd->active_context = ctx->cid;
 	gcd->cb = cb;
 	gcd->cb_data = data;
-	gcd->active_context = ctx->cid;
 	gcd->proto = ctx->proto;
+	gcd->state = STATE_ENABLING;
 
-	if (ctx->auth_method != OFONO_GPRS_AUTH_METHOD_NONE && ctx->username[0])
-		username = ctx->username;
+	buf_apn = gemalto_get_cgdcont_command(modem, gcd->at_cid, ctx->proto,
+								ctx->apn);
+	buf_auth = gemalto_get_auth_command(modem, gcd->at_cid,
+				ctx->auth_method, ctx->username, ctx->password);
 
-	if (ctx->auth_method != OFONO_GPRS_AUTH_METHOD_NONE && ctx->password[0])
-		password = ctx->password;
+	/*
+	 * note that if the cgdcont or auth commands are not ok we ignore them
+	 * and continue but if the sending fails we do an error
+	 */
+	if (!g_at_chat_send(gcd->chat, buf_apn, none_prefix,
+						NULL, NULL, NULL) ||
+			!g_at_chat_send(gcd->chat, buf_auth, none_prefix,
+						NULL, NULL, NULL)) {
+		CALLBACK_WITH_FAILURE(cb, data);
+		goto end;
+	}
 
+	snprintf(mbim_apn, sizeof(mbim_apn), "*99***%d#", gcd->at_cid);
 	message = mbim_message_new(mbim_uuid_basic_connect,
 					MBIM_CID_CONNECT,
 					MBIM_COMMAND_TYPE_SET);
 	mbim_message_set_arguments(message, "uusssuuu16y",
 				ctx->cid,
 				1, /* MBIMActivationCommandActivate */
-				ctx->apn,
-				username,
-				password,
+				mbim_apn,
+				NULL, /* username */
+				NULL, /* password */
 				0, /*MBIMCompressionNone */
-				auth_method_to_auth_protocol(ctx->auth_method),
+				0, /* MBIMAUthProtocolNone */
 				proto_to_context_ip_type(ctx->proto),
 				mbim_context_type_internet);
 
 	if (mbim_device_send(gcd->device, GPRS_CONTEXT_GROUP, message,
 				mbim_activate_cb, gc, NULL) > 0)
-		return;
+		goto end;
 
 	mbim_message_unref(message);
 	CALLBACK_WITH_FAILURE(cb, data);
+end:
+	g_free(buf_apn);
+	g_free(buf_auth);
 }
 
 static void gemalto_gprs_detach_shutdown(struct ofono_gprs_context *gc,

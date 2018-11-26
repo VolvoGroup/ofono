@@ -1923,6 +1923,8 @@ static gboolean gemalto_csq_query(gpointer user_data)
 	return TRUE;
 }
 
+void manage_csq_source(struct ofono_netreg *netreg, gboolean add);
+
 static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct ofono_netreg *netreg = user_data;
@@ -2115,8 +2117,7 @@ static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		g_at_chat_register(nd->chat, "+CESQ:", cesq_notify,
 						FALSE, netreg, NULL);
 
-		if (!nd->csq_source) /* in case it has already be called, to avoid a memory leak */
-			nd->csq_source = g_timeout_add_seconds(60, gemalto_csq_query, netreg);
+		manage_csq_source(netreg, TRUE);
 
 		break;
 	case OFONO_VENDOR_NOKIA:
@@ -2133,6 +2134,19 @@ static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 				creg_notify, FALSE, netreg, NULL);
 	ofono_netreg_register(netreg);
 }
+
+void manage_csq_source(struct ofono_netreg *netreg, gboolean add)
+{
+	struct netreg_data *nd = ofono_netreg_get_data(netreg);
+	if (nd->csq_source) {
+		g_source_remove(nd->csq_source);
+		nd->csq_source = 0;
+	}
+	if(add)
+		nd->csq_source = g_timeout_add_seconds(5,
+						gemalto_csq_query, netreg);
+}
+
 
 static void at_creg_test_cb(gboolean ok, GAtResult *result, gpointer user_data)
 {

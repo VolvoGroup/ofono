@@ -3,7 +3,6 @@
  *  oFono - Open Source Telephony
  *
  *  Copyright (C) 2017 Piotr Haber. All rights reserved.
- *  Copyright (C) 2018 Sebastian Arnd. All rights reserved.
  *  Copyright (C) 2018 Gemalto M2M
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -50,16 +49,7 @@ enum state {
 struct gprs_context_data {
 	GAtChat *chat;
 	unsigned int active_context;
-	char username[OFONO_GPRS_MAX_USERNAME_LENGTH + 1];
-	char password[OFONO_GPRS_MAX_PASSWORD_LENGTH + 1];
-	enum ofono_gprs_auth_method auth_method;
 	enum state state;
-	enum ofono_gprs_proto proto;
-	char address[64];
-	char netmask[64];
-	char gateway[64];
-	char dns1[64];
-	char dns2[64];
 	ofono_gprs_context_cb_t cb;
 	void *cb_data;
 	int use_wwan;
@@ -79,7 +69,7 @@ static void failed_setup(struct ofono_gprs_context *gc,
 		if (gcd->use_wwan)
 			sprintf(buf, "AT^SWWAN=0,%u", gcd->active_context);
 		else
-			sprintf(buf, "AT+CGACT=0,%u", gcd->active_context);
+			sprintf(buf, "AT+CGACT=%u,0", gcd->active_context);
 
 		g_at_chat_send(gcd->chat, buf, none_prefix, NULL, NULL, NULL);
 	}
@@ -119,7 +109,7 @@ static void activate_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		gcd->state = STATE_IDLE;
 		return;
 	}
-	/* We've reported sucess already */
+	/* We've reported success already */
 }
 
 static void gemalto_gprs_activate_primary(struct ofono_gprs_context *gc,
@@ -139,16 +129,12 @@ static void gemalto_gprs_activate_primary(struct ofono_gprs_context *gc,
 	gcd->active_context = ctx->cid;
 	gcd->cb = cb;
 	gcd->cb_data = data;
-	memcpy(gcd->username, ctx->username, sizeof(ctx->username));
-	memcpy(gcd->password, ctx->password, sizeof(ctx->password));
 	gcd->state = STATE_ENABLING;
-	gcd->proto = ctx->proto;
-	gcd->auth_method = ctx->auth_method;
 
 	buf_apn = gemalto_get_cgdcont_command(modem, ctx->cid, ctx->proto,
 								ctx->apn);
 	buf_auth = gemalto_get_auth_command(modem, gcd->active_context,
-				gcd->auth_method, gcd->username, gcd->password);
+				ctx->auth_method, ctx->username, ctx->password);
 
 	/*
 	 * note that if the cgdcont or auth commands are not ok we ignore them

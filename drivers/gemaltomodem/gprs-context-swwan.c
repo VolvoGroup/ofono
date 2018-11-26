@@ -3,7 +3,6 @@
  *  oFono - Open Source Telephony
  *
  *  Copyright (C) 2017 Piotr Haber. All rights reserved.
- *  Copyright (C) 2018 Sebastian Arnd. All rights reserved.
  *  Copyright (C) 2018 Gemalto M2M
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -39,8 +38,6 @@
 #include "gemaltomodem.h"
 
 static const char *none_prefix[] = { NULL };
-static const char *cgpaddr_prefix[] = { "+CGPADDR:", NULL };
-static const char *cgcontrdp_prefix[] = { "+CGCONTRDP:", NULL };
 
 enum state {
 	STATE_IDLE,
@@ -52,16 +49,7 @@ enum state {
 struct gprs_context_data {
 	GAtChat *chat;
 	unsigned int active_context;
-	char username[OFONO_GPRS_MAX_USERNAME_LENGTH + 1];
-	char password[OFONO_GPRS_MAX_PASSWORD_LENGTH + 1];
-	enum ofono_gprs_auth_method auth_method;
 	enum state state;
-	enum ofono_gprs_proto proto;
-	char address[64];
-	char netmask[64];
-	char gateway[64];
-	char dns1[64];
-	char dns2[64];
 	ofono_gprs_context_cb_t cb;
 	void *cb_data;
 	int use_wwan;
@@ -77,11 +65,10 @@ static void failed_setup(struct ofono_gprs_context *gc,
 	DBG("deactivate %d", deactivate);
 
 	if (deactivate == TRUE) {
-
 		if (gcd->use_wwan)
 			sprintf(buf, "AT^SWWAN=0,%u", gcd->active_context);
 		else
-			sprintf(buf, "AT+CGACT=0,%u", gcd->active_context);
+			sprintf(buf, "AT+CGACT=%u,0", gcd->active_context);
 
 		g_at_chat_send(gcd->chat, buf, none_prefix, NULL, NULL, NULL);
 	}
@@ -98,142 +85,12 @@ static void failed_setup(struct ofono_gprs_context *gc,
 	gcd->cb(&error, gcd->cb_data);
 }
 
-static void contrdp_cb(gboolean ok, GAtResult *result, gpointer user_data)
-{
-	struct ofono_gprs_context *gc = user_data;
-	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
-	int cid, bearer_id;
-	const char *apn, *ip_mask, *gw;
-	const char *dns1, *dns2;
-	GAtResultIter iter;
-	gboolean found = FALSE;
-	struct ofono_modem *modem;
-	const char *interface;
-	const char *dns[3];
-
-
-	DBG("ok %d", ok);
-
-	if (!ok) {
-		DBG("Unable to get context dynamic paramerers");
-		goto skip;
-	}
-
-	g_at_result_iter_init(&iter, result);
-
-	while (g_at_result_iter_next(&iter, "+CGCONTRDP:")) {
-		if (!g_at_result_iter_next_number(&iter, &cid))
-			goto skip;
-		if (!g_at_result_iter_next_number(&iter, &bearer_id))
-			goto skip;
-		if (!g_at_result_iter_next_string(&iter, &apn))
-			goto skip;
-		if (!g_at_result_iter_next_string(&iter, &ip_mask))
-			goto skip;
-		if (!g_at_result_iter_next_string(&iter, &gw))
-			goto skip;
-		if (!g_at_result_iter_next_string(&iter, &dns1))
-			goto skip;
-		if (!g_at_result_iter_next_string(&iter, &dns2))
-			goto skip;
-
-		if ((unsigned int) cid == gcd->active_context) {
-			found = TRUE;
-
-			/* if it was already set by CGPADDR, we keep it */
-			if (strcmp(gcd->address, "") != 0)
-				strncpy(gcd->netmask,
-					&ip_mask[strlen(gcd->address) + 1],
-					sizeof(gcd->netmask));
-
-			strncpy(gcd->gateway, gw, sizeof(gcd->gateway));
-			strncpy(gcd->dns1, dns1, sizeof(gcd->dns1));
-			strncpy(gcd->dns2, dns2, sizeof(gcd->dns2));
-		}
-	}
-
-	if (found == FALSE)
-		goto skip;
-
-	ofono_info("MASK: %s", gcd->netmask);
-	ofono_info("GW: %s", gcd->gateway);
-	ofono_info("DNS: %s, %s", gcd->dns1, gcd->dns2);
-
-	dns[0] = gcd->dns1;
-	dns[1] = gcd->dns2;
-	dns[2] = 0;
-
-	ofono_gprs_context_set_ipv4_address(gc, gcd->address, TRUE);
-	ofono_gprs_context_set_ipv4_netmask(gc, gcd->netmask);
-	ofono_gprs_context_set_ipv4_gateway(gc, gcd->gateway);
-	ofono_gprs_context_set_ipv4_dns_servers(gc, dns);
-
-skip:
-	gcd->state = STATE_ACTIVE;
-	modem = ofono_gprs_context_get_modem(gc);
-	interface = ofono_modem_get_string(modem, "NetworkInterface");
-	ofono_gprs_context_set_interface(gc, interface);
-
-	if (*gcd->address) {
-		ofono_info("IP: %s", gcd->address);
-		ofono_gprs_context_set_ipv4_address(gc, gcd->address, TRUE);
-	} else {
-		/* DHCP in this case */
-		ofono_gprs_context_set_ipv4_address(gc, NULL, FALSE); /* DHCP */
-	}
-
-	CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
-}
-
-static void address_cb(gboolean ok, GAtResult *result, gpointer user_data)
-{
-	struct ofono_gprs_context *gc = user_data;
-	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
-	int cid;
-	const char *address;
-	char buf[64];
-	GAtResultIter iter;
-
-	DBG("ok %d", ok);
-
-	memset(gcd->address, 0, sizeof(gcd->address));
-
-	if (!ok) {
-		DBG("Unable to get context address");
-		goto skip;
-	}
-
-	g_at_result_iter_init(&iter, result);
-
-	if (!g_at_result_iter_next(&iter, "+CGPADDR:"))
-		goto skip;
-
-	if (!g_at_result_iter_next_number(&iter, &cid))
-		goto skip;
-
-	if ((unsigned int) cid != gcd->active_context)
-		goto skip;
-
-	if (!g_at_result_iter_next_string(&iter, &address))
-		goto skip;
-
-	strncpy(gcd->address, address, sizeof(gcd->address));
-
-skip:
-	sprintf(buf, "AT+CGCONTRDP=%d", gcd->active_context);
-	if (g_at_chat_send(gcd->chat, buf, cgcontrdp_prefix,
-					contrdp_cb, gc, NULL) > 0)
-		return;
-
-	/* in case of AT sending error, we roll back the setup */
-	failed_setup(gc, NULL, TRUE);
-}
-
 static void activate_cb(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct ofono_gprs_context *gc = user_data;
+	struct ofono_modem *modem = ofono_gprs_context_get_modem(gc);
 	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
-	char buf[64];
+	const char *interface;
 
 	DBG("ok %d", ok);
 
@@ -243,17 +100,14 @@ static void activate_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		return;
 	}
 
-	if (g_at_chat_send(gcd->chat, "AT+CGPIAF=1", NULL,
-							NULL, NULL, NULL) == 0)
-		goto error;
+	gcd->state = STATE_ACTIVE;
+	interface = ofono_modem_get_string(modem, "NetworkInterface");
+	ofono_gprs_context_set_interface(gc, interface);
 
-	sprintf(buf, "AT+CGPADDR=%u", gcd->active_context);
-	if (g_at_chat_send(gcd->chat, buf, cgpaddr_prefix,
-					address_cb, gc, NULL) > 0)
-		return;
+	/* use DHCP for all modems for compatibility with the entire family */
+	ofono_gprs_context_set_ipv4_address(gc, NULL, FALSE);
 
-error:
-	failed_setup(gc, NULL, TRUE);
+	CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
 }
 
 static void gemalto_gprs_activate_primary(struct ofono_gprs_context *gc,
@@ -272,16 +126,12 @@ static void gemalto_gprs_activate_primary(struct ofono_gprs_context *gc,
 	gcd->active_context = ctx->cid;
 	gcd->cb = cb;
 	gcd->cb_data = data;
-	memcpy(gcd->username, ctx->username, sizeof(ctx->username));
-	memcpy(gcd->password, ctx->password, sizeof(ctx->password));
 	gcd->state = STATE_ENABLING;
-	gcd->proto = ctx->proto;
-	gcd->auth_method = ctx->auth_method;
 
 	buf_apn = gemalto_get_cgdcont_command(modem, ctx->cid, ctx->proto,
 								ctx->apn);
 	buf_auth = gemalto_get_auth_command(modem, gcd->active_context,
-				gcd->auth_method, gcd->username, gcd->password);
+				ctx->auth_method, ctx->username, ctx->password);
 
 	/*
 	 * note that if the cgdcont or auth commands are not ok we ignore them
@@ -302,7 +152,6 @@ static void gemalto_gprs_activate_primary(struct ofono_gprs_context *gc,
 
 	if (g_at_chat_send(gcd->chat, buf, none_prefix,
 					activate_cb, gc, NULL) > 0){
-		CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
 		goto end;
 	}
 
@@ -338,10 +187,13 @@ static void gemalto_gprs_deactivate_primary(struct ofono_gprs_context *gc,
 	gcd->cb = cb;
 	gcd->cb_data = data;
 
-	sprintf(buf, "AT+CGACT=0,%u", gcd->active_context);
+	if (gcd->use_wwan)
+		sprintf(buf, "AT^SWWAN=0,%u", gcd->active_context);
+	else
+		sprintf(buf, "AT+CGACT=%u,0", gcd->active_context);
 
 	if (g_at_chat_send(gcd->chat, buf, none_prefix,
-				deactivate_cb, gc, NULL) > 0)
+						deactivate_cb, gc, NULL) > 0)
 		return;
 
 	CALLBACK_WITH_SUCCESS(cb, data);
@@ -363,10 +215,10 @@ static void cgev_notify(GAtResult *result, gpointer user_data)
 	if (!g_at_result_iter_next_unquoted_string(&iter, &event))
 		return;
 
-	if (g_str_has_prefix(event, "NW DEACT") == FALSE)
+	if (!g_str_has_prefix(event, "NW DEACT"))
 		return;
 
-	if (!g_at_result_iter_skip_next(&iter))
+	if (!g_at_result_iter_skip_next(&iter)) // "DEACT"
 		return;
 
 	if (!g_at_result_iter_next_number(&iter, &cid))
