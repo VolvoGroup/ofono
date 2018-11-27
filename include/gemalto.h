@@ -19,6 +19,9 @@
  *
  */
 
+#ifndef __OFONO_GEMALTO_H__
+#define __OFONO_GEMALTO_H__
+
 enum auth_option {
 	GEMALTO_AUTH_DEFAULTS		= 0,
 	GEMALTO_AUTH_USE_SGAUTH		= 1<<0,
@@ -31,3 +34,5 @@ struct gemalto_mbim_composite {
 	GAtChat *chat;
 	unsigned int at_cid;
 };
+
+#endif /* __OFONO_GEMALTO_H__ */

@@ -1857,8 +1857,8 @@ static void check_device(struct udev_device *device)
 
 	ofono_ignore_device = udev_device_get_property_value(device,
 							"OFONO_IGNORE_DEVICE");
-		if (ofono_ignore_device)
-			return; /* skip this device */
+	if (ofono_ignore_device)
+		return; /* skip this device */
 
 	if ((g_str_equal(bus, "usb") == TRUE) ||
 			(g_str_equal(bus, "usbmisc") == TRUE))

@@ -166,6 +166,8 @@ struct gemalto_data {
 	gboolean autoactivation;
 	gboolean vts_with_quotes;
 
+	struct ofono_netreg *netreg;
+
 	void *device; /* struct mbim_device* or struct qmi_device* */
 
 	/* mbim data */
@@ -943,7 +945,7 @@ static void gnss_exec_stored_param(struct ofono_modem *modem,
 			break;
 
 		command = g_strdup_printf("AT^SGPSC=%s,%s", property, value);
-		DBG(REDCOLOR"setting GNSS property: %sNOCOLOR", command);
+		DBG(REDCOLOR"setting GNSS property: %s"NOCOLOR, command);
 		g_at_chat_send(data->app, command, NULL, NULL, NULL, NULL);
 		free(command);
 	}
@@ -1051,6 +1053,9 @@ static void gemalto_powersave_cb(gboolean ok, GAtResult *result,
 	__ofono_dbus_pending_reply(&data->hc_msg, reply);
 }
 
+static void mbim_subscriptions(struct ofono_modem *modem, gboolean subscribe);
+void manage_csq_source(struct ofono_netreg *netreg, gboolean add);
+
 static DBusMessage *hc_set_property(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
@@ -1094,6 +1099,12 @@ static DBusMessage *hc_set_property(DBusConnection *conn,
 
 	gnss_exec_stored_param(modem, enable ? "gnss_powersave" :
 								"gnss_normal");
+
+	if(data->netreg)
+		manage_csq_source(data->netreg, !enable);
+
+	if(data->mbim == STATE_PRESENT)
+		mbim_subscriptions(modem, !enable);
 
 	if (!g_at_chat_send(data->app, "AT", none_prefix,
 				gemalto_powersave_cb, modem, NULL))
@@ -1849,6 +1860,49 @@ static int gemalto_enable_app(struct ofono_modem *modem)
 	return -EINPROGRESS;
 }
 
+static void mbim_subscriptions(struct ofono_modem *modem, gboolean subscribe)
+{
+	struct gemalto_data *md = ofono_modem_get_data(modem);
+	struct mbim_message *message;
+
+	message = mbim_message_new(mbim_uuid_basic_connect,
+					MBIM_CID_DEVICE_SERVICE_SUBSCRIBE_LIST,
+					MBIM_COMMAND_TYPE_SET);
+
+	if(subscribe)
+		/* subscribe all */
+		mbim_message_set_arguments(message, "av", 5,
+					"16yuuuuuuuuuuuu",
+					mbim_uuid_basic_connect, 11,
+					MBIM_CID_SUBSCRIBER_READY_STATUS,
+					MBIM_CID_RADIO_STATE,
+					MBIM_CID_PREFERRED_PROVIDERS,
+					MBIM_CID_REGISTER_STATE,
+					MBIM_CID_PACKET_SERVICE,
+					MBIM_CID_SIGNAL_STATE,
+					MBIM_CID_CONNECT,
+					MBIM_CID_PROVISIONED_CONTEXTS,
+					MBIM_CID_IP_CONFIGURATION,
+					MBIM_CID_EMERGENCY_MODE,
+					MBIM_CID_MULTICARRIER_PROVIDERS,
+					"16yuuuu", mbim_uuid_sms, 3,
+					MBIM_CID_SMS_CONFIGURATION,
+					MBIM_CID_SMS_READ,
+					MBIM_CID_SMS_MESSAGE_STORE_STATUS,
+					"16yuu", mbim_uuid_ussd, 1,
+					MBIM_CID_USSD,
+					"16yuu", mbim_uuid_phonebook, 1,
+					MBIM_CID_PHONEBOOK_CONFIGURATION,
+					"16yuu", mbim_uuid_stk, 1,
+					MBIM_CID_STK_PAC);
+	else
+		/* unsubscribe all */
+		mbim_message_set_arguments(message, "av", 0);
+
+	mbim_device_send(md->device, 0, message, NULL, NULL, NULL);
+}
+
+
 static void mbim_device_caps_info_cb(struct mbim_message *message, void *user)
 {
 	struct ofono_modem *modem = user;
@@ -1897,19 +1951,34 @@ static void mbim_device_caps_info_cb(struct mbim_message *message, void *user)
 					MBIM_CID_DEVICE_SERVICE_SUBSCRIBE_LIST,
 					MBIM_COMMAND_TYPE_SET);
 
-	mbim_message_set_arguments(message, "av", 2,
-					"16yuuuuuuu",
-					mbim_uuid_basic_connect, 6,
+	/* unsubscribe all */
+	//mbim_message_set_arguments(message, "av", 0);
+
+	/* subscribe all */
+	mbim_message_set_arguments(message, "av", 5,
+					"16yuuuuuuuuuuuu",
+					mbim_uuid_basic_connect, 11,
 					MBIM_CID_SUBSCRIBER_READY_STATUS,
 					MBIM_CID_RADIO_STATE,
+					MBIM_CID_PREFERRED_PROVIDERS,
 					MBIM_CID_REGISTER_STATE,
 					MBIM_CID_PACKET_SERVICE,
 					MBIM_CID_SIGNAL_STATE,
 					MBIM_CID_CONNECT,
+					MBIM_CID_PROVISIONED_CONTEXTS,
+					MBIM_CID_IP_CONFIGURATION,
+					MBIM_CID_EMERGENCY_MODE,
+					MBIM_CID_MULTICARRIER_PROVIDERS,
 					"16yuuuu", mbim_uuid_sms, 3,
 					MBIM_CID_SMS_CONFIGURATION,
 					MBIM_CID_SMS_READ,
-					MBIM_CID_SMS_MESSAGE_STORE_STATUS);
+					MBIM_CID_SMS_MESSAGE_STORE_STATUS,
+					"16yuu", mbim_uuid_ussd, 1,
+					MBIM_CID_USSD,
+					"16yuu", mbim_uuid_phonebook, 1,
+					MBIM_CID_PHONEBOOK_CONFIGURATION,
+					"16yuu", mbim_uuid_stk, 1,
+					MBIM_CID_STK_PAC);
 
 	if (mbim_device_send(md->device, 0, message,
 				NULL, NULL, NULL)) {
@@ -2515,28 +2584,21 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 		}
 	}
 
-	// TODO: the ofono_gprs_create may require gemaltomodem instead of atmodem
-
 	if (data->mbim == STATE_PRESENT) {
 		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
 								data->app);
 		ofono_gprs_set_cid_range(gprs, 0, data->max_sessions);
-		if (data->model == 0x62 || data->model == 0x65) {
+		if (data->model == 0x65) {
 			struct gemalto_mbim_composite comp;
 			comp.device = data->device;
 			comp.chat = data->app;
 			comp.at_cid = 4;
 			gc = ofono_gprs_context_create(modem, 0, "gemaltomodemmbim", &comp);
-		} else /* model == 0x5d */
+		} else /* model == 0x5d, 0x62 (standard mbim driver) */
 			gc = ofono_gprs_context_create(modem, 0, "mbim", data->device);
 	} else if (data->qmi == STATE_PRESENT) {
 		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
 								data->app);
-		// TODO: verify if need be to create the contexts and auth params beforehand
-		// if so, may need a gprs-context gemaltomodem-at-qmi
-
-		/* on QMI devices, only a single context is supported */
-		// TODO: Is 1 ok for attach_APN != context_APN?
 		ofono_gprs_set_cid_range(gprs, 1, 1);
 		gc = ofono_gprs_context_create(modem, 0, "qmimodem",
 								data->device);
@@ -2549,16 +2611,17 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 		if (data->gprs_opt == USE_CTX3)
 			ofono_gprs_set_cid_range(gprs, 3, 3);
 		else if (data->model == 0x5b)
-			/*
-			 * limitation: same APN as for attach
-			 * in this case create more contexts
-			 */
+			/* limitation: same APN as for attach */
 			ofono_gprs_set_cid_range(gprs, 1, 11);
 		else
 			ofono_gprs_set_cid_range(gprs, 4, 16);
 		// maybe rename the next to gemaltomodem-wwan
-		gc = ofono_gprs_context_create(modem, 0, "gemaltomodemswwan",
-								data->app);
+		if (data->gprs_opt != USE_CTX3)
+			gc = ofono_gprs_context_create(modem, 0,
+						"gemaltomodemswwan", data->app);
+		else
+			gc = ofono_gprs_context_create(modem, 0,
+					"gemaltomodemswwanblocking", data->app);
 	} else if (data->gprs_opt == USE_PPP) {
 		/* plain PPP only works from mdm ports */
 		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
@@ -2598,8 +2661,8 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 	 *
 	 * Ofono does not make a distinction between no-sim and
 	 * airplane-mode scenarios, so we create the voicecall in post-online.
-	 * This is half-compatible with the European directives that require
-	 * a SIM inserted also for emergency setup.
+	 * This is compatible with the European directives that require
+	 * a SIM inserted and PIN validated also for emergency setup.
 	 */
 
 	if (data->voice_avail) {
@@ -2620,7 +2683,7 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 	if (mw)
 		ofono_message_waiting_register(mw);
 
-	ofono_netreg_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
+	data->netreg = ofono_netreg_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
 	data->hold_remove = FALSE;
 }
 
