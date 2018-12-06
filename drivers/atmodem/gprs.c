@@ -423,7 +423,7 @@ static void cgreg_notify(GAtResult *result, gpointer user_data)
 	struct gprs_data *gd = ofono_gprs_get_data(gprs);
 	int status, bearer;
 
-	if (!at_util_parse_reg_unsolicited(result, "+CGREG:", &status,
+	if (at_util_parse_reg_unsolicited(result, "+CGREG:", &status,
 				NULL, NULL, &bearer, gd->vendor) == FALSE)
 		return;
 
@@ -458,7 +458,7 @@ static void cereg_notify(GAtResult *result, gpointer user_data)
 	struct gprs_data *gd = ofono_gprs_get_data(gprs);
 	int status, bearer;
 
-	if (!at_util_parse_reg_unsolicited(result, "+CEREG:", &status,
+	if (at_util_parse_reg_unsolicited(result, "+CEREG:", &status,
 				NULL, NULL, &bearer, gd->vendor) == FALSE)
 		return;
 
@@ -471,7 +471,7 @@ static void c5greg_notify(GAtResult *result, gpointer user_data)
 	struct gprs_data *gd = ofono_gprs_get_data(gprs);
 	int status, bearer;
 
-	if (!at_util_parse_reg_unsolicited(result, "+C5GREG:", &status,
+	if (at_util_parse_reg_unsolicited(result, "+C5GREG:", &status,
 				NULL, NULL, &bearer, gd->vendor) == FALSE)
 		return;
 
