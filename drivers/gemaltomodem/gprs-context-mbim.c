@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 
 #include <ofono/log.h>
 #include <ofono/modem.h>
@@ -286,9 +287,12 @@ done:
 
 	gcd->state = STATE_ACTIVE;
 	interface = ofono_modem_get_string(modem, "NetworkInterface");
+	DBG();
 	ofono_gprs_context_set_interface(gc, interface);
+	DBG("%p(%p)", gcd->cb, gcd->cb_data);
 
 	CALLBACK_WITH_SUCCESS(gcd->cb, gcd->cb_data);
+	DBG();
 	gcd->cb = NULL;
 	gcd->cb_data = NULL;
 	return;
@@ -333,11 +337,47 @@ static void mbim_activate_cb(struct mbim_message *message, void *user)
 				mbim_ip_configuration_cb, gc, NULL) > 0)
 		return;
 
+	mbim_message_unref(message);
 error:
 	CALLBACK_WITH_FAILURE(gcd->cb, gcd->cb_data);
 	gcd->state = STATE_IDLE;
 	gcd->cb = NULL;
 	gcd->cb_data = NULL;
+}
+
+static void auth_cb(gboolean ok, GAtResult *result, gpointer user_data)
+{
+	struct ofono_gprs_context *gc = user_data;
+	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
+	struct mbim_message *message;
+	char mbim_apn[101];
+
+	if (!ok)
+		goto error;
+
+	snprintf(mbim_apn, sizeof(mbim_apn), "*99***%d#", gcd->at_cid);
+	message = mbim_message_new(mbim_uuid_basic_connect,
+					MBIM_CID_CONNECT,
+					MBIM_COMMAND_TYPE_SET);
+	mbim_message_set_arguments(message, "uusssuuu16y",
+				gcd->active_context,
+				1, /* MBIMActivationCommandActivate */
+				mbim_apn,
+				NULL, /* username */
+				NULL, /* password */
+				0, /*MBIMCompressionNone */
+				0, /* MBIMAUthProtocolNone */
+				proto_to_context_ip_type(gcd->proto),
+				mbim_context_type_internet);
+
+	if (mbim_device_send(gcd->device, GPRS_CONTEXT_GROUP, message,
+				mbim_activate_cb, gc, NULL) > 0)
+		return;
+
+	mbim_message_unref(message);
+error:
+	ofono_error("Unable activate context");
+	CALLBACK_WITH_FAILURE(gcd->cb, gcd->cb_data);
 }
 
 static void gemalto_gprs_activate_primary(struct ofono_gprs_context *gc,
@@ -346,10 +386,8 @@ static void gemalto_gprs_activate_primary(struct ofono_gprs_context *gc,
 {
 	struct ofono_modem *modem = ofono_gprs_context_get_modem(gc);
 	struct gprs_context_data *gcd = ofono_gprs_context_get_data(gc);
-	struct mbim_message *message;
 	char *buf_apn;
 	char *buf_auth;
-	char mbim_apn[101];
 
 	DBG("cid %u", ctx->cid);
 
@@ -371,33 +409,9 @@ static void gemalto_gprs_activate_primary(struct ofono_gprs_context *gc,
 	if (!g_at_chat_send(gcd->chat, buf_apn, none_prefix,
 						NULL, NULL, NULL) ||
 			!g_at_chat_send(gcd->chat, buf_auth, none_prefix,
-						NULL, NULL, NULL)) {
+						auth_cb, gc, NULL))
 		CALLBACK_WITH_FAILURE(cb, data);
-		goto end;
-	}
 
-	snprintf(mbim_apn, sizeof(mbim_apn), "*99***%d#", gcd->at_cid);
-	message = mbim_message_new(mbim_uuid_basic_connect,
-					MBIM_CID_CONNECT,
-					MBIM_COMMAND_TYPE_SET);
-	mbim_message_set_arguments(message, "uusssuuu16y",
-				ctx->cid,
-				1, /* MBIMActivationCommandActivate */
-				mbim_apn,
-				NULL, /* username */
-				NULL, /* password */
-				0, /*MBIMCompressionNone */
-				0, /* MBIMAUthProtocolNone */
-				proto_to_context_ip_type(ctx->proto),
-				mbim_context_type_internet);
-
-	if (mbim_device_send(gcd->device, GPRS_CONTEXT_GROUP, message,
-				mbim_activate_cb, gc, NULL) > 0)
-		goto end;
-
-	mbim_message_unref(message);
-	CALLBACK_WITH_FAILURE(cb, data);
-end:
 	g_free(buf_apn);
 	g_free(buf_auth);
 }

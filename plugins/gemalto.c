@@ -190,11 +190,28 @@ struct gemalto_data {
  * Generic functions
  ******************************************************************************/
 
-static void gemalto_debug(const char *str, void *user_data)
+static void gemalto_at_debug(const char *str, void *user_data)
 {
 	const char *prefix = user_data;
 
-	ofono_info("%s%s", prefix, str);
+	if (getenv("OFONO_AT_DEBUG"))
+		ofono_info("%s%s", prefix, str);
+}
+
+static void gemalto_mbim_debug(const char *str, void *user_data)
+{
+	const char *prefix = user_data;
+
+	if (getenv("OFONO_MBIM_DEBUG"))
+		ofono_info("%s%s", prefix, str);
+}
+
+static void gemalto_qmi_debug(const char *str, void *user_data)
+{
+	const char *prefix = user_data;
+
+	if (getenv("OFONO_QMI_DEBUG"))
+		ofono_info("%s%s", prefix, str);
 }
 
 static const char *gemalto_get_string(struct ofono_modem *modem, const char *k)
@@ -1707,12 +1724,23 @@ static gboolean gemalto_open_cb(GIOChannel *source, GIOCondition condition,
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 	GAtSyntax *syntax;
+	GIOStatus status;
+	char buf[1024] = {0};
+	size_t buflen = 1024;
 
 	if (data->channel == NULL)
 		return TRUE;
 
 	if ((condition & G_IO_IN) == 0)
 		return TRUE;
+
+	status = g_io_channel_read_chars(data->channel, buf, buflen, &buflen, NULL);
+
+	if (status == G_IO_STATUS_ERROR)
+		goto failed;
+
+	if(!strstr(buf, "OK"))
+		return TRUE; /* keep waiting and receiving buffer notif. */
 
 	g_source_remove(data->probing_timer);
 	data->probing_timer = 0;
@@ -1731,7 +1759,7 @@ static gboolean gemalto_open_cb(GIOChannel *source, GIOCondition condition,
 
 	g_io_channel_unref(data->channel);
 	data->channel = NULL;
-	g_at_chat_set_debug(data->tmp_chat, gemalto_debug, "App: ");
+	g_at_chat_set_debug(data->tmp_chat, gemalto_at_debug, "App: ");
 	data->open_cb(TRUE, modem);
 	return TRUE; // finished
 failed:
@@ -1753,9 +1781,9 @@ static int gemalto_probe_device(void *user_data)
 		return FALSE;
 
 	data->waiting_time++;
-	DBG("%d/%d", data->waiting_time, data->init_waiting_time);
+	DBG("%d/%d", data->waiting_time, data->init_waiting_time+3);
 
-	if (data->waiting_time > data->init_waiting_time) {
+	if (data->waiting_time > data->init_waiting_time+3) {
 		data->waiting_time = 0;
 		goto failed;
 	}
@@ -1780,8 +1808,9 @@ failed:
 
 #include <asm/ioctls.h>
 #include <linux/serial.h>
-
-int ioctl(int, int, void *);
+#include <termios.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
 
 static void gemalto_open_device(const char *device,
 				OpenResultFunc func, struct ofono_modem *modem)
@@ -1790,6 +1819,7 @@ static void gemalto_open_device(const char *device,
 	GHashTable *options;
 	int fd;
 	struct serial_struct old, new;
+	int DTR_flag = TIOCM_DTR;
 
 	if (!device  || !*device) {
 		func(FALSE, modem);
@@ -1827,6 +1857,8 @@ static void gemalto_open_device(const char *device,
 	new.closing_wait = ASYNC_CLOSING_WAIT_NONE;
 	ioctl(fd, TIOCSSERIAL, &new);
 
+	ioctl(fd, TIOCMBIS, &DTR_flag);
+
 	g_io_channel_flush(data->channel, NULL);
 	/* the channel is set by default to "UTF-8" and buffered */
 	g_io_channel_set_encoding(data->channel, NULL, NULL);
@@ -1834,7 +1866,7 @@ static void gemalto_open_device(const char *device,
 	data->open_cb = func;
 	data->read_src = g_io_add_watch(data->channel, G_IO_IN, gemalto_open_cb,
 									modem);
-	data->probing_timer = g_timeout_add_seconds(5, gemalto_probe_device,
+	data->probing_timer = g_timeout_add_seconds(2, gemalto_probe_device,
 									modem);
 }
 
@@ -2070,7 +2102,7 @@ static int mbim_enable(struct ofono_modem *modem)
 					mbim_device_ready, modem, NULL);
 	mbim_device_set_disconnect_handler(md->device,
 				mbim_device_closed, modem, NULL);
-	mbim_device_set_debug(md->device, gemalto_debug, "MBIM:", NULL);
+	mbim_device_set_debug(md->device, gemalto_mbim_debug, "MBIM:", NULL);
 
 	return -EINPROGRESS;
 
@@ -2115,7 +2147,7 @@ static int qmi_enable(struct ofono_modem *modem)
 	}
 
 	qmi_device_set_close_on_unref(data->device, true);
-	qmi_device_set_debug(data->device, gemalto_debug, "QMI: ");
+	qmi_device_set_debug(data->device, gemalto_qmi_debug, "QMI: ");
 	qmi_device_discover(data->device, qmi_enable_cb, modem, NULL);
 	return -EINPROGRESS;
 
