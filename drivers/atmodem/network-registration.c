@@ -683,6 +683,7 @@ static void cesq_notify(GAtResult *result, gpointer user_data)
 	struct ofono_netreg *netreg = user_data;
 	int strength_GSM, strength_UTRAN, strength_EUTRAN;
 	GAtResultIter iter;
+	struct netreg_data *nd = ofono_netreg_get_data(netreg);
 
 	g_at_result_iter_init(&iter, result);
 
@@ -713,6 +714,7 @@ static void cesq_notify(GAtResult *result, gpointer user_data)
 	if (!g_at_result_iter_next_number(&iter, &strength_EUTRAN))
 		return;
 
+	nd->supports_cesq = AT_COMMAND_SUPPORTED;
 	ofono_netreg_strength_notify(netreg,
 				at_util_convert_signal_strength_cesq(strength_GSM, strength_UTRAN, strength_EUTRAN));
 }
