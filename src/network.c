@@ -71,7 +71,7 @@ struct ofono_netreg {
 	struct ofono_sim_context *sim_context;
 	GKeyFile *settings;
 	char *imsi;
-  char reject_cause[MAX_REJECT_CAUSE_LENGTH];
+	char reject_cause[MAX_REJECT_CAUSE_LENGTH];
 	struct ofono_watchlist *status_watches;
 	const struct ofono_netreg_driver *driver;
 	void *driver_data;
@@ -852,7 +852,7 @@ static DBusMessage *network_get_properties(DBusConnection *conn,
 					&netreg->base_station);
 
 	cause = netreg->reject_cause;
-  ofono_dbus_dict_append(&dict, "RejectCause", DBUS_TYPE_STRING, &cause);
+	ofono_dbus_dict_append(&dict, "RejectCause", DBUS_TYPE_STRING, &cause);
 
 	dbus_message_iter_close_container(&iter, &dict);
 
@@ -1531,15 +1531,15 @@ static void notify_emulator_strength(struct ofono_atom *atom, void *data)
 
 void ofono_netreg_reject_cause_notify(struct ofono_netreg *netreg, const char* reject_cause)
 {
-  DBusConnection *conn = ofono_dbus_get_connection();
-  const char *path = __ofono_atom_get_path(netreg->atom);
+	DBusConnection *conn = ofono_dbus_get_connection();
+	const char *path = __ofono_atom_get_path(netreg->atom);
 
-  strncpy(netreg->reject_cause, reject_cause, sizeof(netreg->reject_cause));
+	g_strlcpy(netreg->reject_cause, reject_cause, sizeof(netreg->reject_cause));
 
-  ofono_dbus_signal_property_changed(conn, path,
-          OFONO_NETWORK_REGISTRATION_INTERFACE,
-          "RejectCause", DBUS_TYPE_STRING,
-          &reject_cause);
+	ofono_dbus_signal_property_changed(conn, path,
+					OFONO_NETWORK_REGISTRATION_INTERFACE,
+					"RejectCause", DBUS_TYPE_STRING,
+					&reject_cause);
 }
 
 void ofono_netreg_strength_notify(struct ofono_netreg *netreg, int strength)
