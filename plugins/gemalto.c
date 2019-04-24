@@ -1383,7 +1383,7 @@ static void gemalto_remove(struct ofono_modem *modem)
 	}
 
 	if (data->mdm) {
-		g_at_chat_cancel_all(data->app);
+		g_at_chat_cancel_all(data->mdm);
 		g_at_chat_unregister_all(data->mdm);
 		g_at_chat_unref(data->mdm);
 		data->mdm = NULL;
