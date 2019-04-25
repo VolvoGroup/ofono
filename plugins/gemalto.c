@@ -1140,21 +1140,10 @@ static void gemalto_smso_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	if (data->hc_msg == NULL)
 		return;
 
-	if (data->conn != GEMALTO_CONNECTION_SERIAL)
-		goto finished;
+	if (data->conn == GEMALTO_CONNECTION_SERIAL && ok) {
+	  ofono_modem_set_powered(modem, FALSE);
+	}
 
-	if (data->mdm)
-		g_at_chat_unref(data->mdm);
-	data->mdm = NULL;
-
-	if (data->app)
-		g_at_chat_unref(data->app);
-	data->app = NULL;
-
-	if (ok)
-		ofono_modem_set_powered(modem, FALSE);
-
-finished:
 	reply = dbus_message_new_method_return(data->hc_msg);
 	__ofono_dbus_pending_reply(&data->hc_msg, reply);
 }
@@ -1345,6 +1334,8 @@ static void gemalto_remove(struct ofono_modem *modem)
 	DBusConnection *conn = ofono_dbus_get_connection();
 	const char *path;
 
+	DBG("");
+
 	if (!modem)
 		return;
 
@@ -1381,11 +1372,14 @@ static void gemalto_remove(struct ofono_modem *modem)
 		g_at_chat_cancel_all(data->app);
 		g_at_chat_unregister_all(data->app);
 		g_at_chat_unref(data->app);
+		if (data->mdm == data->app) {
+		  data->mdm = NULL;
+		}
 		data->app = NULL;
 	}
 
 	if (data->mdm) {
-		g_at_chat_cancel_all(data->app);
+		g_at_chat_cancel_all(data->mdm);
 		g_at_chat_unregister_all(data->mdm);
 		g_at_chat_unref(data->mdm);
 		data->mdm = NULL;
