@@ -72,6 +72,8 @@ static void generic_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	struct voicecall_data *vd = ofono_voicecall_get_data(req->vc);
 	struct ofono_error error;
 
+	DBG("generic_cb: %s", result ? g_at_result_final_response(result) : "<NOTHING>");
+
 	decode_at_error(&error, g_at_result_final_response(result));
 
 	if (ok && req->affected_types) {
@@ -135,8 +137,14 @@ static void gemalto_hangup(struct ofono_voicecall *vc,
 {
 	unsigned int affected = (1 << CALL_STATUS_ACTIVE);
 
+	DBG("Hanging up ACTIVE");
+
 	/* Hangup current active call */
-//	gemalto_call_common("AT+CHLD=1", vc, generic_cb, affected, cb, data);
+	/* {
+		static char buf[16];
+		snprintf(buf, "AT+CHLD=1%d", <>);
+		gemalto_call_common(buf, vc, generic_cb, affected, cb, data);
+	}*/
 	gemalto_call_common("AT+CHUP", vc, generic_cb, affected, cb, data);
 }
 

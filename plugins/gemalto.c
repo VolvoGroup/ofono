@@ -1837,7 +1837,7 @@ static void gemalto_open_device(const char *device,
 	g_hash_table_insert(options, "DataBits", "8");
 	g_hash_table_insert(options, "Parity", "none");
 	g_hash_table_insert(options, "XonXoff", "off");
-	g_hash_table_insert(options, "RtsCts", "on");
+	g_hash_table_insert(options, "RtsCts", "off");
 	g_hash_table_insert(options, "Local", "on");
 	g_hash_table_insert(options, "Read", "on");
 

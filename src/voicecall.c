@@ -536,11 +536,15 @@ static DBusMessage *voicecall_hangup(DBusConnection *conn,
 	struct ofono_call *call = v->call;
 	gboolean single_call = vc->call_list->next == 0;
 
+	DBG("hangup %s", call->name);
+
 	if (vc->pending || vc->pending_em)
 		return __ofono_error_busy(msg);
 
 	if (vc->dial_req && vc->dial_req->call != v)
 		return __ofono_error_busy(msg);
+
+	DBG("call->statu == %d", call->status);
 
 	switch (call->status) {
 	case CALL_STATUS_DISCONNECTED:
@@ -591,7 +595,7 @@ static DBusMessage *voicecall_hangup(DBusConnection *conn,
 		}
 
 		/*
-		 * We check if we have a single alerting, dialing or activeo
+		 * We check if we have a single alerting, dialing or active
 		 * call and try to hang it up with hangup_all or hangup_active
 		 */
 
