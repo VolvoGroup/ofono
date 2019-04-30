@@ -544,7 +544,7 @@ static DBusMessage *voicecall_hangup(DBusConnection *conn,
 	if (vc->dial_req && vc->dial_req->call != v)
 		return __ofono_error_busy(msg);
 
-	DBG("call->statu == %d", call->status);
+	DBG("call->status == %d", call->status);
 
 	switch (call->status) {
 	case CALL_STATUS_DISCONNECTED:

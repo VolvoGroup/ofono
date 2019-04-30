@@ -173,6 +173,7 @@ static void mbim_ip_configuration_cb(struct mbim_message *message, void *user)
 				&ipv4_mtu, &ipv6_mtu))
 		goto error;
 
+	DBG("MTU: %u", ipv4_mtu);
 	if (gcd->proto == OFONO_GPRS_PROTO_IPV6)
 		goto ipv6;
 
