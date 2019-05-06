@@ -1446,10 +1446,10 @@ static void gemalto_ciev_simstatus_notify(GAtResultIter *iter,
 	struct ofono_sim *sim = data->sim;
 	int status;
 
-	DBG("sim status %d", status);
-
 	if (!g_at_result_iter_next_number(iter, &status))
 		return;
+
+	DBG("sim status %d", status);
 
 	switch (status) {
 	/* SIM is removed from the holder */
@@ -1459,6 +1459,7 @@ static void gemalto_ciev_simstatus_notify(GAtResultIter *iter,
 
 	/* SIM is inserted inside the holder */
 	case 1:
+		ofono_sim_inserted_notify(sim, TRUE);
 		/* The SIM won't be ready yet */
 		data->sim_state_query = at_util_sim_state_query_new(data->app,
 					1, 20, sim_ready_cb, modem,
