@@ -167,7 +167,7 @@ void ofono_modem_set_data(struct ofono_modem *modem, void *data)
 {
 	if (modem == NULL)
 		return;
-
+  DBG("%p->driver_data = %p", modem, modem->driver_data);
 	modem->driver_data = data;
 }
 
@@ -175,7 +175,8 @@ void *ofono_modem_get_data(struct ofono_modem *modem)
 {
 	if (modem == NULL)
 		return NULL;
-
+  DBG("%p->driver_data", modem);
+  DBG("%p->driver_data = %p", modem, modem->driver_data);
 	return modem->driver_data;
 }
 
@@ -901,6 +902,7 @@ static int set_powered(struct ofono_modem *modem, ofono_bool_t powered)
 	const struct ofono_modem_driver *driver = modem->driver;
 	int err = -EINVAL;
 
+	DBG("modem=%p, powered=%d", modem, powered);
 	if (modem->powered_pending == powered)
 		return -EALREADY;
 
@@ -1152,7 +1154,7 @@ static DBusMessage *modem_set_property(DBusConnection *conn,
 		if (powered) {
 			modem_change_state(modem, MODEM_STATE_PRE_SIM);
 
-			/* Force SIM Ready for devies with no sim atom */
+			/* Force SIM Ready for devices with no sim atom */
 			if (modem_has_sim(modem) == FALSE)
 				sim_state_watch(OFONO_SIM_STATE_READY, modem);
 		} else {
@@ -1907,6 +1909,10 @@ struct ofono_modem *ofono_modem_create(const char *name, const char *type)
 
 	modem = g_try_new0(struct ofono_modem, 1);
 
+	DBG("The modem struct is %lu bytes", sizeof (struct ofono_modem));
+	DBG("path is %lu bytes in", (size_t)&((struct ofono_modem*)0)->path);
+  DBG("driver_data is %lu bytes in", (size_t)&((struct ofono_modem*)0)->driver_data);
+
 	if (modem == NULL)
 		return modem;
 
@@ -2156,20 +2162,21 @@ static void modem_unregister(struct ofono_modem *modem)
 
 	g_dbus_unregister_interface(conn, modem->path, OFONO_MODEM_INTERFACE);
 
-	if (modem->driver && modem->driver->remove)
+	if (modem->driver && modem->driver->remove) {
+		DBG("Calling modem->driver->remove() for modem %s", modem->path);
 		modem->driver->remove(modem);
+	} else
+		DBG("no modem->driver->remove() available");
 }
 
-void remove_modem_notify(void *m);
+void ofono_remove_modem_notify(void *m) {
+	struct ofono_modem *modem = m;
+	g_hash_table_destroy(modem->properties);
+	modem->properties = NULL;
 
-void remove_modem_notify(void *m) {
-    struct ofono_modem *modem = m;
-    g_hash_table_destroy(modem->properties);
-    modem->properties = NULL;
-
-    modem->driver = NULL;
-    emit_modem_removed(modem);
-    call_modemwatches(modem, FALSE);
+	modem->driver = NULL;
+	emit_modem_removed(modem);
+	call_modemwatches(modem, FALSE);
 }
 
 void ofono_modem_remove(struct ofono_modem *modem)

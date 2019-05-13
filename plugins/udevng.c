@@ -1431,6 +1431,7 @@ static void destroy_modem(gpointer data)
 	g_free(modem->vendor);
 	g_free(modem->model);
 	g_free(modem);
+	DBG("modem destroyed");
 }
 
 static gboolean check_remove(gpointer key, gpointer value, gpointer user_data)
@@ -1966,6 +1967,8 @@ static gboolean udev_event(GIOChannel *channel, GIOCondition cond,
 {
 	struct udev_device *device;
 	const char *action;
+
+	DBG("(%p, 0x%x, %p)", channel, cond, user_data);
 
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
 		ofono_warn("Error with udev monitor channel");

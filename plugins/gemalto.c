@@ -592,7 +592,7 @@ static void gemalto_time_enable(struct ofono_modem *modem)
 }
 
 /*******************************************************************************
- * Command passtrhough interface
+ * Command passthrough interface
  ******************************************************************************/
 
 #define COMMAND_PASSTHROUGH_INTERFACE OFONO_SERVICE ".gemalto.CommandPassthrough"
@@ -1326,8 +1326,6 @@ static int gemalto_remove_delayed(void *modem)
 	return FALSE;
 }
 
-void remove_modem_notify(void *m);
-
 static void gemalto_remove(struct ofono_modem *modem)
 {
 	struct gemalto_data *data;
@@ -1350,6 +1348,7 @@ static void gemalto_remove(struct ofono_modem *modem)
 	 * unplugged before calling enable
 	 */
 	if (data->hold_remove) {
+	  DBG("Making a delayed remove");
 		/* in initialization phase: cannot remove now. retry in 1s */
 		data->remove_timer = g_timeout_add_seconds(1,
 						gemalto_remove_delayed, modem);
@@ -1422,7 +1421,7 @@ static void gemalto_remove(struct ofono_modem *modem)
 
 	ofono_modem_set_data(modem, NULL);
 	g_free(data);
-	remove_modem_notify(modem);
+	ofono_remove_modem_notify(modem);
 }
 
 static void sim_ready_cb(gboolean present, gpointer user_data)
@@ -1647,6 +1646,7 @@ static void gemalto_initialize(struct ofono_modem *modem)
 		DBG("no AT interface available. Removing this device.");
 		ofono_modem_set_powered(modem, FALSE);
 		data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 		return;
 	}
 
@@ -1714,6 +1714,7 @@ static void gemalto_initialize(struct ofono_modem *modem)
 	gemalto_set_cfun(data->app, 4, modem);
 	data->init_done = TRUE;
 	data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 }
 
 #include <asm/ioctls.h>
@@ -2132,6 +2133,7 @@ other_devices:
 
 	if (md->init_done) {
 		md->hold_remove = FALSE;
+		DBG("hold_remove <- %s", md->hold_remove ? "TRUE" : "FALSE");
 		return 0;
 	}
 
@@ -2185,6 +2187,7 @@ other_devices:
 
 	if (data->init_done) {
 		data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 		return 0;
 	}
 
@@ -2360,6 +2363,7 @@ static void gemalto_detect_serial(gboolean success, struct ofono_modem *modem)
 
 	if (!success) {
 		data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 		ofono_modem_set_powered(modem, FALSE);
 		return;
 	}
@@ -2394,6 +2398,7 @@ static int gemalto_enable_serial(struct ofono_modem *modem)
 
 	if (!device) {
 		data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 		return -EINVAL;
 	}
 
@@ -2414,6 +2419,7 @@ static int gemalto_enable(struct ofono_modem *modem)
 		return -EINVAL;
 
 	data->hold_remove = TRUE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 
 	data->conn = g_str_equal(conn_type,"Serial") ? GEMALTO_CONNECTION_SERIAL
 						: GEMALTO_CONNECTION_USB;
@@ -2485,6 +2491,7 @@ static void set_online_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	decode_at_error(&error, g_at_result_final_response(result));
 	cb(&error, cbd->data);
 	data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 }
 
 static void gemalto_set_online_serial(struct ofono_modem *modem,
@@ -2518,6 +2525,7 @@ static void gemalto_set_online_serial(struct ofono_modem *modem,
 	CALLBACK_WITH_FAILURE(cb, cbd->data);
 	g_free(cbd);
 	data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 }
 
 static void gemalto_set_online(struct ofono_modem *modem, ofono_bool_t online,
@@ -2528,6 +2536,7 @@ static void gemalto_set_online(struct ofono_modem *modem, ofono_bool_t online,
 	char const *cmd = online ? "AT+CFUN=1" : "AT+CFUN=4";
 
 	data->hold_remove = TRUE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 	cbd->user = modem;
 
 	if (data->conn == GEMALTO_CONNECTION_SERIAL) {
@@ -2548,6 +2557,7 @@ static void gemalto_set_online(struct ofono_modem *modem, ofono_bool_t online,
 	CALLBACK_WITH_FAILURE(cb, cbd->data);
 	g_free(cbd);
 	data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 }
 
 static void gemalto_pre_sim(struct ofono_modem *modem)
@@ -2556,6 +2566,7 @@ static void gemalto_pre_sim(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 	data->hold_remove = TRUE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 	gemalto_exec_stored_cmd(modem, "pre_sim");
 	ofono_location_reporting_create(modem, 0, "gemaltomodem", data->app);
 	data->sim = ofono_sim_create(modem, OFONO_VENDOR_GEMALTO,
@@ -2565,6 +2576,7 @@ static void gemalto_pre_sim(struct ofono_modem *modem)
 		ofono_sim_inserted_notify(data->sim, TRUE);
 
 	data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 }
 static int mbim_sim_probe(void *device)
 {
@@ -2593,6 +2605,7 @@ static void gemalto_post_sim(struct ofono_modem *modem)
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 
 	data->hold_remove = TRUE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 	gemalto_exec_stored_cmd(modem, "post_sim");
 
 	if (data->mbim == STATE_PRESENT) {
@@ -2607,6 +2620,7 @@ static void gemalto_post_sim(struct ofono_modem *modem)
 		ofono_lte_create(modem, 0, "gemaltomodem", data->app);
 
 	data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 }
 
 static void cgdcont17_probe(gboolean ok, GAtResult *result, gpointer user_data)
@@ -2752,6 +2766,7 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 
 	data->netreg = ofono_netreg_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
 	data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 }
 
 static int gemalto_post_online_delayed(void *modem)
@@ -2793,6 +2808,7 @@ static void gemalto_post_online(struct ofono_modem *modem)
 	 * can be avoided when capturing the right URCs
 	 */
 	data->hold_remove = TRUE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 	g_timeout_add_seconds(5, gemalto_post_online_delayed, modem);
 }
 
@@ -2833,6 +2849,7 @@ static int gemalto_disable(struct ofono_modem *modem)
 
 	DBG("%p", modem);
 	data->hold_remove = TRUE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 
 	if (data->conn == GEMALTO_CONNECTION_SERIAL)
 		return gemalto_disable_serial(modem);
@@ -2854,6 +2871,7 @@ static int gemalto_disable(struct ofono_modem *modem)
 	gemalto_exec_stored_cmd(modem, "disable");
 	gemalto_set_cfun(data->app, 41, modem);
 	data->hold_remove = FALSE;
+		DBG("hold_remove <- %s", data->hold_remove ? "TRUE" : "FALSE");
 	return -EINPROGRESS;
 }
 
