@@ -129,6 +129,7 @@ typedef void (*OpenResultFunc)(gboolean success, struct ofono_modem *modem);
 struct gemalto_data {
 	gboolean hold_remove;
 	guint remove_timer;
+	guint online_timer;
 	gboolean init_done;
 	GIOChannel *channel;
 	GAtChat *tmp_chat;
@@ -1345,7 +1346,12 @@ static void gemalto_remove(struct ofono_modem *modem)
 	if (!data)
 		return;
 
-	/*
+	if (data->online_timer) {
+		g_source_remove(data->online_timer);
+		data->online_timer = 0;
+	}
+
+/*
 	 * data->init_done alone is not sufficient because the device could be
 	 * unplugged before calling enable
 	 */
@@ -1714,6 +1720,7 @@ static void gemalto_initialize(struct ofono_modem *modem)
 	gemalto_set_cfun(data->app, 4, modem);
 	data->init_done = TRUE;
 	data->hold_remove = FALSE;
+	data->online_timer = 0;
 }
 
 #include <asm/ioctls.h>
@@ -2793,7 +2800,7 @@ static void gemalto_post_online(struct ofono_modem *modem)
 	 * can be avoided when capturing the right URCs
 	 */
 	data->hold_remove = TRUE;
-	g_timeout_add_seconds(5, gemalto_post_online_delayed, modem);
+	data->online_timer= g_timeout_add_seconds(5, gemalto_post_online_delayed, modem);
 }
 
 static void mbim_radio_off_for_disable(struct mbim_message *message, void *user)
