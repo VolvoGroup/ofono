@@ -48,7 +48,7 @@ static gint compare_priority(gconstpointer a, gconstpointer b)
 static gboolean add_plugin(void *handle, struct ofono_plugin_desc *desc)
 {
 	struct ofono_plugin *plugin;
-	 DBG("(%p, %p) : %s: %s", handle, desc, desc->name, desc->description);
+
 	if (desc->init == NULL)
 		return FALSE;
 
@@ -111,7 +111,7 @@ int __ofono_plugin_init(const char *pattern, const char *exclude)
 	gchar *filename;
 	unsigned int i;
 
-	DBG("include %s, exclude %s", pattern, exclude);
+	DBG("");
 
 	if (pattern)
 		patterns = g_strsplit_set(pattern, ":, ", -1);
@@ -132,12 +132,10 @@ int __ofono_plugin_init(const char *pattern, const char *exclude)
 		while ((file = g_dir_read_name(dir)) != NULL) {
 			void *handle;
 			struct ofono_plugin_desc *desc;
-			DBG("testing %s", file);
+
 			if (g_str_has_prefix(file, "lib") == TRUE ||
 					g_str_has_suffix(file, ".so") == FALSE)
 				continue;
-
-			DBG("found %s", file);
 
 			filename = g_build_filename(PLUGINDIR, file, NULL);
 

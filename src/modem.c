@@ -167,7 +167,7 @@ void ofono_modem_set_data(struct ofono_modem *modem, void *data)
 {
 	if (modem == NULL)
 		return;
-  DBG("%p->driver_data = %p", modem, modem->driver_data);
+
 	modem->driver_data = data;
 }
 
@@ -175,8 +175,7 @@ void *ofono_modem_get_data(struct ofono_modem *modem)
 {
 	if (modem == NULL)
 		return NULL;
-  DBG("%p->driver_data", modem);
-  DBG("%p->driver_data = %p", modem, modem->driver_data);
+
 	return modem->driver_data;
 }
 
@@ -902,7 +901,6 @@ static int set_powered(struct ofono_modem *modem, ofono_bool_t powered)
 	const struct ofono_modem_driver *driver = modem->driver;
 	int err = -EINVAL;
 
-	DBG("modem=%p, powered=%d", modem, powered);
 	if (modem->powered_pending == powered)
 		return -EALREADY;
 
@@ -1909,10 +1907,6 @@ struct ofono_modem *ofono_modem_create(const char *name, const char *type)
 
 	modem = g_try_new0(struct ofono_modem, 1);
 
-	DBG("The modem struct is %lu bytes", sizeof (struct ofono_modem));
-	DBG("path is %lu bytes in", (size_t)&((struct ofono_modem*)0)->path);
-  DBG("driver_data is %lu bytes in", (size_t)&((struct ofono_modem*)0)->driver_data);
-
 	if (modem == NULL)
 		return modem;
 
@@ -2162,11 +2156,8 @@ static void modem_unregister(struct ofono_modem *modem)
 
 	g_dbus_unregister_interface(conn, modem->path, OFONO_MODEM_INTERFACE);
 
-	if (modem->driver && modem->driver->remove) {
-		DBG("Calling modem->driver->remove() for modem %s", modem->path);
+	if (modem->driver && modem->driver->remove)
 		modem->driver->remove(modem);
-	} else
-		DBG("no modem->driver->remove() available");
 }
 
 void ofono_remove_modem_notify(void *m) {
@@ -2174,7 +2165,7 @@ void ofono_remove_modem_notify(void *m) {
 	g_hash_table_destroy(modem->properties);
 	modem->properties = NULL;
 
-	modem->driver = NULL;
+	modem->driver = NULL; /* FIXME nothing to remove? */
 	emit_modem_removed(modem);
 	call_modemwatches(modem, FALSE);
 }

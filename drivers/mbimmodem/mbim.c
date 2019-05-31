@@ -33,8 +33,6 @@
 
 #include <ell/ell.h>
 
-#include <ofono/log.h>
-
 #include "mbim.h"
 #include "mbim-message.h"
 #include "mbim-private.h"
@@ -412,7 +410,6 @@ static inline uint32_t _mbim_device_get_next_tid(struct mbim_device *device)
 static void disconnect_handler(struct l_io *io, void *user_data)
 {
 	struct mbim_device *device = user_data;
-	DBG("(io=%p, user_data=%p)", io, user_data);
 
 	l_util_debug(device->debug_handler, device->debug_data, "disconnect");
 
@@ -897,8 +894,6 @@ struct mbim_device *mbim_device_new(int fd, uint32_t max_segment_size)
 {
 	struct mbim_device *device;
 
-	DBG("(fd=%d, max=%u)", fd, max_segment_size);
-
 	if (unlikely(fd < 0))
 		return NULL;
 
@@ -926,7 +921,6 @@ struct mbim_device *mbim_device_new(int fd, uint32_t max_segment_size)
 	device->notifications = l_queue_new();
 	device->assembly = message_assembly_new();
 
-	DBG("DONE");
 	return mbim_device_ref(device);
 }
 
@@ -972,7 +966,6 @@ void mbim_device_unref(struct mbim_device *device)
 
 bool mbim_device_shutdown(struct mbim_device *device)
 {
-	DBG("device = %p", device);
 	if (unlikely(!device))
 		return false;
 
