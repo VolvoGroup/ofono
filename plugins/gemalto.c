@@ -78,20 +78,20 @@
 void print_trace();
 
 void print_trace() {
-    char pid_buf[30];
-    char name_buf[512];
-    int child_pid;
-    sprintf(pid_buf, "%d", getpid());
-    name_buf[readlink("/proc/self/exe", name_buf, 511)]=0;
-    child_pid = fork();
-    if (!child_pid) {
-        dup2(2,1); // redirect output to stderr
-        fprintf(stdout,"stack trace for %s pid=%s\n",name_buf,pid_buf);
-        execlp("gdb", "gdb", "--batch", "-n", "-ex", "thread", "-ex", "bt", name_buf, pid_buf, NULL);
-        abort(); /* If gdb failed to start */
-    } else {
-        waitpid(child_pid,NULL,0);
-    }
+	char pid_buf[30];
+	char name_buf[512];
+	int child_pid;
+	sprintf(pid_buf, "%d", getpid());
+	name_buf[readlink("/proc/self/exe", name_buf, 511)]=0;
+	child_pid = fork();
+	if (!child_pid) {
+	dup2(2,1); // redirect output to stderr
+	fprintf(stdout,"stack trace for %s pid=%s\n",name_buf,pid_buf);
+	execlp("gdb", "gdb", "--batch", "-n", "-ex", "thread", "-ex", "bt", name_buf, pid_buf, NULL);
+	abort(); /* If gdb failed to start */
+	} else {
+	waitpid(child_pid,NULL,0);
+	}
 }
 
 /* debug utilities - end */
@@ -179,11 +179,11 @@ struct gemalto_data {
 
 	/* hardware monitor variables */
 	struct {
-	  DBusMessage *msg;
-	  int32_t temperature;
-	  int32_t voltage;
-	  guint sctm;
-	  guint sbc;
+		DBusMessage *msg;
+		int32_t temperature;
+		int32_t voltage;
+		guint sctm;
+		guint sbc;
 	} hwmon;
 	/* gnss variables */
 	DBusMessage *gnss_msg;
@@ -216,7 +216,6 @@ static void gemalto_qmi_debug(const char *str, void *user_data)
 {
 	const char *prefix = user_data;
 
-	if (getenv("OFONO_QMI_DEBUG"))
 		ofono_info("%s%s", prefix, str);
 }
 
@@ -546,30 +545,30 @@ static void gemalto_hardware_monitor_enable(struct ofono_modem *modem)
 
 static void gemalto_hardware_monitor_disable(struct ofono_modem *modem)
 {
-  struct gemalto_data *data = ofono_modem_get_data(modem);
-  DBusConnection *conn = ofono_dbus_get_connection();
-  const char *path = ofono_modem_get_path(modem);
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	DBusConnection *conn = ofono_dbus_get_connection();
+	const char *path = ofono_modem_get_path(modem);
 
-  /* Disable temperature URC */
-  if (data->app) {
-    g_at_chat_send(data->app, "AT^SCTM=0", none_prefix, NULL, NULL, NULL);
-    if (data->hwmon.sbc) g_at_chat_unregister(data->app, data->hwmon.sbc);
-    if (data->hwmon.sctm) g_at_chat_unregister(data->app, data->hwmon.sctm);
-  }
+	/* Disable temperature URC */
+	if (data->app) {
+		g_at_chat_send(data->app, "AT^SCTM=0", none_prefix, NULL, NULL, NULL);
+		if (data->hwmon.sbc) g_at_chat_unregister(data->app, data->hwmon.sbc);
+		if (data->hwmon.sctm) g_at_chat_unregister(data->app, data->hwmon.sctm);
+	}
 
-  if (!g_dbus_unregister_interface(conn, path, HARDWARE_MONITOR_INTERFACE)) {
-    ofono_error("Could not unregister %s interface under %s",
-          HARDWARE_MONITOR_INTERFACE, path);
-  }
+	if (!g_dbus_unregister_interface(conn, path, HARDWARE_MONITOR_INTERFACE)) {
+		ofono_error("Could not unregister %s interface under %s",
+			HARDWARE_MONITOR_INTERFACE, path);
+	}
 
-  ofono_modem_remove_interface(modem, HARDWARE_MONITOR_INTERFACE);
+	ofono_modem_remove_interface(modem, HARDWARE_MONITOR_INTERFACE);
 
-  if (!g_dbus_unregister_interface(conn, path, CINTERION_LEGACY_HWMON_INTERFACE)) {
-    ofono_error("Could not unregister %s interface under %s",
-          CINTERION_LEGACY_HWMON_INTERFACE, path);
-  }
+	if (!g_dbus_unregister_interface(conn, path, CINTERION_LEGACY_HWMON_INTERFACE)) {
+		ofono_error("Could not unregister %s interface under %s",
+			CINTERION_LEGACY_HWMON_INTERFACE, path);
+	}
 
-  ofono_modem_remove_interface(modem, CINTERION_LEGACY_HWMON_INTERFACE);
+	ofono_modem_remove_interface(modem, CINTERION_LEGACY_HWMON_INTERFACE);
 }
 
 /*******************************************************************************
@@ -628,16 +627,16 @@ static void gemalto_time_enable(struct ofono_modem *modem)
 
 static void gemalto_time_disable(struct ofono_modem *modem)
 {
-  DBusConnection *conn = ofono_dbus_get_connection();
-  const char *path = ofono_modem_get_path(modem);
+	DBusConnection *conn = ofono_dbus_get_connection();
+	const char *path = ofono_modem_get_path(modem);
 
-  if (!g_dbus_unregister_interface(conn, path, GEMALTO_NITZ_TIME_INTERFACE)) {
-    ofono_error("Could not unregister %s interface under %s",
-          GEMALTO_NITZ_TIME_INTERFACE, path);
-    return;
-  }
+	if (!g_dbus_unregister_interface(conn, path, GEMALTO_NITZ_TIME_INTERFACE)) {
+		ofono_error("Could not unregister %s interface under %s",
+			GEMALTO_NITZ_TIME_INTERFACE, path);
+		return;
+	}
 
-  ofono_modem_remove_interface(modem, GEMALTO_NITZ_TIME_INTERFACE);
+	ofono_modem_remove_interface(modem, GEMALTO_NITZ_TIME_INTERFACE);
 }
 
 /*******************************************************************************
@@ -832,17 +831,17 @@ static void gemalto_command_passthrough_enable(struct ofono_modem *modem)
 
 static void gemalto_command_passthrough_disable(struct ofono_modem *modem)
 {
-  DBusConnection *conn = ofono_dbus_get_connection();
-  const char *path = ofono_modem_get_path(modem);
+	DBusConnection *conn = ofono_dbus_get_connection();
+	const char *path = ofono_modem_get_path(modem);
 
-  /* Create Command Passthrough DBus interface */
-  if (!g_dbus_unregister_interface(conn, path, COMMAND_PASSTHROUGH_INTERFACE)) {
-    ofono_error("Could not register %s interface under %s",
-          COMMAND_PASSTHROUGH_INTERFACE, path);
-    return;
-  }
+	/* Create Command Passthrough DBus interface */
+	if (!g_dbus_unregister_interface(conn, path, COMMAND_PASSTHROUGH_INTERFACE)) {
+		ofono_error("Could not register %s interface under %s",
+			COMMAND_PASSTHROUGH_INTERFACE, path);
+		return;
+	}
 
-  ofono_modem_remove_interface(modem, COMMAND_PASSTHROUGH_INTERFACE);
+	ofono_modem_remove_interface(modem, COMMAND_PASSTHROUGH_INTERFACE);
 }
 
 /*******************************************************************************
@@ -1071,19 +1070,19 @@ static void gemalto_gnss_enable(struct ofono_modem *modem)
 
 static void gemalto_gnss_disable(struct ofono_modem *modem)
 {
-  DBusConnection *conn = ofono_dbus_get_connection();
-  const char *path = ofono_modem_get_path(modem);
+	DBusConnection *conn = ofono_dbus_get_connection();
+	const char *path = ofono_modem_get_path(modem);
 
-  gnss_exec_stored_param(modem, "gnss_shutdown"); // FIXME where to describe/read
+	gnss_exec_stored_param(modem, "gnss_shutdown"); // FIXME where to describe/read
 
-  /* Create GNSS DBus interface */
-  if (!g_dbus_unregister_interface(conn, path, GNSS_INTERFACE)) {
-    ofono_error("Could not unregister %s interface under %s",
-          GNSS_INTERFACE, path);
-    return;
-  }
+	/* Create GNSS DBus interface */
+	if (!g_dbus_unregister_interface(conn, path, GNSS_INTERFACE)) {
+		ofono_error("Could not unregister %s interface under %s",
+			GNSS_INTERFACE, path);
+		return;
+	}
 
-  ofono_modem_remove_interface(modem, GNSS_INTERFACE);
+	ofono_modem_remove_interface(modem, GNSS_INTERFACE);
 }
 
 /*******************************************************************************
@@ -1322,17 +1321,17 @@ static void gemalto_hardware_control_enable(struct ofono_modem *modem)
 
 static void gemalto_hardware_control_disable(struct ofono_modem *modem)
 {
-  DBusConnection *conn = ofono_dbus_get_connection();
-  const char *path = ofono_modem_get_path(modem);
+	DBusConnection *conn = ofono_dbus_get_connection();
+	const char *path = ofono_modem_get_path(modem);
 
-  /* Create Hardware Control DBus interface */
-  if (!g_dbus_unregister_interface(conn, path, HARDWARE_CONTROL_INTERFACE)) {
-    ofono_error("Could not unregister %s interface under %s",
-          HARDWARE_CONTROL_INTERFACE, path);
-    return;
-  }
+	/* Create Hardware Control DBus interface */
+	if (!g_dbus_unregister_interface(conn, path, HARDWARE_CONTROL_INTERFACE)) {
+		ofono_error("Could not unregister %s interface under %s",
+			HARDWARE_CONTROL_INTERFACE, path);
+		return;
+	}
 
-  ofono_modem_remove_interface(modem, HARDWARE_CONTROL_INTERFACE);
+	ofono_modem_remove_interface(modem, HARDWARE_CONTROL_INTERFACE);
 }
 
 /*******************************************************************************
@@ -1422,7 +1421,7 @@ static void gemalto_remove(struct ofono_modem *modem)
 
 	/*
 	 * Stop the probing, if present
-	 */
+	*/
 	if (data->probing_timer) {
 		g_source_remove(data->probing_timer);
 		data->probing_timer = 0;
@@ -2916,3 +2915,4 @@ static void gemalto_exit(void)
 
 OFONO_PLUGIN_DEFINE(gemalto, "Gemalto modem plugin", VERSION,
 		OFONO_PLUGIN_PRIORITY_DEFAULT, gemalto_init, gemalto_exit)
+
