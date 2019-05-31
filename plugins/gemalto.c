@@ -216,6 +216,7 @@ static void gemalto_qmi_debug(const char *str, void *user_data)
 {
 	const char *prefix = user_data;
 
+	if (getenv("OFONO_QMI_DEBUG"))
 		ofono_info("%s%s", prefix, str);
 }
 
