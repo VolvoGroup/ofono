@@ -85,12 +85,12 @@ void print_trace() {
 	name_buf[readlink("/proc/self/exe", name_buf, 511)]=0;
 	child_pid = fork();
 	if (!child_pid) {
-	dup2(2,1); // redirect output to stderr
-	fprintf(stdout,"stack trace for %s pid=%s\n",name_buf,pid_buf);
-	execlp("gdb", "gdb", "--batch", "-n", "-ex", "thread", "-ex", "bt", name_buf, pid_buf, NULL);
-	abort(); /* If gdb failed to start */
+		dup2(2,1); // redirect output to stderr
+		fprintf(stdout,"stack trace for %s pid=%s\n",name_buf,pid_buf);
+		execlp("gdb", "gdb", "--batch", "-n", "-ex", "thread", "-ex", "bt", name_buf, pid_buf, NULL);
+		abort(); /* If gdb failed to start */
 	} else {
-	waitpid(child_pid,NULL,0);
+		waitpid(child_pid,NULL,0);
 	}
 }
 
