@@ -1463,7 +1463,7 @@ static void gemalto_remove(struct ofono_modem *modem)
 
 	ofono_modem_set_data(modem, NULL);
 	g_free(data);
-	ofono_remove_modem_notify(modem);
+	// FIXME ofono_modem_set_data(modem, NULL); when deleted?
 }
 
 static void sim_ready_cb(gboolean present, gpointer user_data)
