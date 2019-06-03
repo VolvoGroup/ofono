@@ -1406,8 +1406,6 @@ static int gemalto_probe(struct ofono_modem *modem)
 static void gemalto_remove(struct ofono_modem *modem)
 {
 	struct gemalto_data *data;
-	DBusConnection *conn = ofono_dbus_get_connection();
-	const char *path;
 
 	DBG("");
 
@@ -1415,7 +1413,6 @@ static void gemalto_remove(struct ofono_modem *modem)
 		return;
 
 	data = ofono_modem_get_data(modem);
-	path = ofono_modem_get_path(modem);
 
 	if (!data)
 		return;
@@ -2428,7 +2425,6 @@ static void gemalto_detect_sysstart(GAtResult *result, gpointer user_data)
 
 static int gemalto_enable_serial(struct ofono_modem *modem)
 {
-	struct gemalto_data *data = ofono_modem_get_data(modem);
 	const char *device = ofono_modem_get_string(modem, "ATport");
 
 	if (!device) {
@@ -2516,7 +2512,6 @@ static void set_online_cb(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct cb_data *cbd = user_data;
 	ofono_modem_online_cb_t cb = cbd->cb;
-	struct gemalto_data *data = ofono_modem_get_data(cbd->user);
 	struct ofono_error error;
 	decode_at_error(&error, g_at_result_final_response(result));
 	cb(&error, cbd->data);
