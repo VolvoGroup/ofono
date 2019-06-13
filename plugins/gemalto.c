@@ -166,11 +166,8 @@ struct gemalto_data {
 
 	struct ofono_netreg *netreg;
 
-	/* struct mbim_device* or struct qmi_device* */
-	union {
-	  struct mbim_device *mbim;
-	  struct qmi_device  *qmi;
-	} device;
+	struct mbim_device *mbimd;
+	struct qmi_device  *qmid;
 
 	/* mbim data */
 	uint16_t max_segment;
@@ -542,7 +539,6 @@ static void gemalto_hardware_monitor_enable(struct ofono_modem *modem)
 
 	ofono_modem_add_interface(modem, CINTERION_LEGACY_HWMON_INTERFACE);
 }
-
 
 static void gemalto_hardware_monitor_disable(struct ofono_modem *modem)
 {
@@ -1431,13 +1427,13 @@ static void gemalto_remove(struct ofono_modem *modem)
 	}
 
 	if (data->mbim == STATE_PRESENT) { // FIXME
-		mbim_device_shutdown(data->device.mbim);
-		mbim_device_unref(data->device.mbim); // FIXME
+		mbim_device_shutdown(data->mbimd);
+		mbim_device_unref(data->mbimd); // FIXME
 		data->mbim = STATE_ABSENT;
 	}
 
 	if (data->qmi == STATE_PRESENT) {
-		qmi_device_unref(data->device.qmi);
+		qmi_device_unref(data->qmid);
 	}
 
 	if (data->app) {
@@ -1474,9 +1470,15 @@ static void sim_ready_cb(gboolean present, gpointer user_data)
 	at_util_sim_state_query_free(data->sim_state_query);
 	data->sim_state_query = NULL;
 
-	DBG("sim present: %d", present);
-
 	ofono_sim_inserted_notify(sim, present);
+}
+
+static int gemalto_ciev_simstatus_delayed(void *modem) {
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	data->sim_state_query = at_util_sim_state_query_new(data->app,
+				1, 20, sim_ready_cb, modem,
+				NULL);
+	return FALSE; /* to kill the timer */
 }
 
 static void gemalto_ciev_simstatus_notify(GAtResultIter *iter,
@@ -1499,11 +1501,8 @@ static void gemalto_ciev_simstatus_notify(GAtResultIter *iter,
 
 	/* SIM is inserted inside the holder */
 	case 1:
-		ofono_sim_inserted_notify(sim, TRUE);
-		/* The SIM won't be ready yet */
-		data->sim_state_query = at_util_sim_state_query_new(data->app,
-					1, 20, sim_ready_cb, modem,
-					NULL);
+		/* delay for 2 seconds the AT+CPIN? check, to make sure the sim is powered, otherwise we can get a SIM failure (error 13) */
+		g_timeout_add_seconds(2, gemalto_ciev_simstatus_delayed, modem);
 		break;
 
 	/* USIM initialization completed. UE has finished reading USIM data. */
@@ -1989,7 +1988,7 @@ static void mbim_subscriptions(struct ofono_modem *modem, gboolean subscribe)
 		/* unsubscribe all */
 		mbim_message_set_arguments(message, "av", 0);
 
-	mbim_device_send(md->device.mbim, 0, message, NULL, NULL, NULL);
+	mbim_device_send(md->mbimd, 0, message, NULL, NULL, NULL);
 }
 
 
@@ -2070,7 +2069,7 @@ static void mbim_device_caps_info_cb(struct mbim_message *message, void *user)
 					"16yuu", mbim_uuid_stk, 1,
 					MBIM_CID_STK_PAC);
 
-	if (mbim_device_send(md->device.mbim, 0, message,
+	if (mbim_device_send(md->mbimd, 0, message,
 				NULL, NULL, NULL)) {
 		md->mbim = STATE_PRESENT;
 		goto other_devices;
@@ -2078,7 +2077,7 @@ static void mbim_device_caps_info_cb(struct mbim_message *message, void *user)
 
 
 error:
-	mbim_device_shutdown(md->device.mbim);
+	mbim_device_shutdown(md->mbimd);
 
 other_devices:
 
@@ -2097,7 +2096,7 @@ static void mbim_device_ready(void *user_data)
 					1, MBIM_COMMAND_TYPE_QUERY);
 
 	mbim_message_set_arguments(message, "");
-	mbim_device_send(md->device.mbim, 0, message, mbim_device_caps_info_cb,
+	mbim_device_send(md->mbimd, 0, message, mbim_device_caps_info_cb,
 		modem, NULL);
 }
 
@@ -2121,10 +2120,10 @@ static void mbim_device_closed(void *user_data)
 	/* reset the state for future attempts */
 	md->mbim = STATE_PROBE;
 
-	if(md->device.mbim)
-		mbim_device_unref(md->device.mbim);
+	if(md->mbimd)
+		mbim_device_unref(md->mbimd);
 
-	md->device.mbim = NULL;
+	md->mbimd = NULL;
 }
 
 static int mbim_enable(struct ofono_modem *modem)
@@ -2153,16 +2152,16 @@ static int mbim_enable(struct ofono_modem *modem)
 	ioctl(fd, TIOCMBIS, &DTR_flag);
 
 	DBG("device: %s opened successfully", device);
-	md->device.mbim = mbim_device_new(fd, md->max_segment);
-	DBG("created new device %p", md->device.mbim);
+	md->mbimd = mbim_device_new(fd, md->max_segment);
+	DBG("created new device %p", md->mbimd);
 
-	mbim_device_set_close_on_unref(md->device.mbim, true);
-	mbim_device_set_max_outstanding(md->device.mbim, md->max_outstanding);
-	mbim_device_set_ready_handler(md->device.mbim,
+	mbim_device_set_close_on_unref(md->mbimd, true);
+	mbim_device_set_max_outstanding(md->mbimd, md->max_outstanding);
+	mbim_device_set_ready_handler(md->mbimd,
 					mbim_device_ready, modem, NULL);
-	mbim_device_set_disconnect_handler(md->device.mbim,
+	mbim_device_set_disconnect_handler(md->mbimd,
 				mbim_device_closed, modem, NULL);
-	mbim_device_set_debug(md->device.mbim, gemalto_mbim_debug, "MBIM:", NULL);
+	mbim_device_set_debug(md->mbimd, gemalto_mbim_debug, "MBIM:", NULL);
 
 	return -EINPROGRESS;
 
@@ -2207,15 +2206,15 @@ static int qmi_enable(struct ofono_modem *modem)
 	ioctl(fd, TIOCSSERIAL, &new);
 	ioctl(fd, TIOCMBIS, &DTR_flag);
 
-	data->device.qmi = qmi_device_new(fd);
-	if (!data->device.qmi) {
+	data->qmid = qmi_device_new(fd);
+	if (!data->qmid) {
 		close(fd);
 		goto other_devices;
 	}
 
-	qmi_device_set_close_on_unref(data->device.qmi, true);
-	qmi_device_set_debug(data->device.qmi, gemalto_qmi_debug, "QMI: ");
-	qmi_device_discover(data->device.qmi, qmi_enable_cb, modem, NULL);
+	qmi_device_set_close_on_unref(data->qmid, true);
+	qmi_device_set_debug(data->qmid, gemalto_qmi_debug, "QMI: ");
+	qmi_device_discover(data->qmid, qmi_enable_cb, modem, NULL);
 	return -EINPROGRESS;
 
 other_devices:
@@ -2620,7 +2619,7 @@ static void gemalto_post_sim(struct ofono_modem *modem)
 
 	if (data->mbim == STATE_PRESENT) {
 		/* very important to set the interface ready */
-		mbim_sim_probe(data->device.mbim);
+		mbim_sim_probe(data->mbimd);
 	}
 
 	ofono_phonebook_create(modem, 0, "atmodem", data->app);
@@ -2678,18 +2677,18 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 		ofono_gprs_set_cid_range(gprs, 0, data->max_sessions);
 		if (data->model == 0x65) {
 			struct gemalto_mbim_composite comp;
-			comp.device = data->device.mbim;
+			comp.device = data->mbimd;
 			comp.chat = data->app;
 			comp.at_cid = 4;
 			gc = ofono_gprs_context_create(modem, 0, "gemaltomodemmbim", &comp);
 		} else /* model == 0x5d, 0x62 (standard mbim driver) */
-			gc = ofono_gprs_context_create(modem, 0, "mbim", data->device.mbim);
+			gc = ofono_gprs_context_create(modem, 0, "mbim", data->mbimd);
 	} else if (data->qmi == STATE_PRESENT) {
 		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
 								data->app);
 		ofono_gprs_set_cid_range(gprs, 1, 1);
 		gc = ofono_gprs_context_create(modem, 0, "qmimodem",
-								data->device.qmi);
+								data->qmid);
 	} else if (data->gprs_opt == USE_SWWAN || data->gprs_opt == USE_CTX17 ||
 						data->gprs_opt == USE_CTX3) {
 		ofono_modem_set_integer(modem, "GemaltoWwan",
@@ -2822,7 +2821,7 @@ static void mbim_radio_off_for_disable(struct mbim_message *message, void *user)
 
 	DBG("%p", modem);
 
-	mbim_device_shutdown(md->device.mbim);
+	mbim_device_shutdown(md->mbimd);
 }
 
 static int gemalto_disable_serial(struct ofono_modem *modem)
@@ -2868,11 +2867,11 @@ static int gemalto_disable(struct ofono_modem *modem)
 						MBIM_COMMAND_TYPE_SET);
 		mbim_message_set_arguments(message, "u", 0);
 
-		mbim_device_send(data->device.mbim, 0, message,
+		mbim_device_send(data->mbimd, 0, message,
 			mbim_radio_off_for_disable, modem, NULL);
-		mbim_device_shutdown(data->device.mbim);
-		mbim_device_unref(data->device.mbim);
-		data->device.mbim = NULL;
+		mbim_device_shutdown(data->mbimd);
+		mbim_device_unref(data->mbimd);
+		data->mbimd = NULL;
 		data->mbim = STATE_ABSENT;
 	}
 
