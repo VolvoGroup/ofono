@@ -1967,10 +1967,20 @@ static gboolean udev_event(GIOChannel *channel, GIOCondition cond,
 	struct udev_device *device;
 	const char *action;
 
+	DBG("udev_event(..., 0x%x, ...)", cond);
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
 		ofono_warn("Error with udev monitor channel");
-		udev_watch = 0;
-		return FALSE;
+		if (cond & G_IO_ERR) {
+			DBG("Received condition G_IO_ERR");
+		}
+		if (cond & G_IO_HUP) {
+			ofono_error("Received condition G_IO_HUP");
+			exit(EXIT_FAILURE);
+		}
+		if (cond & G_IO_NVAL) {
+			ofono_error("Received condition G_IO_NVAL");
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	device = udev_monitor_receive_device(udev_mon);
