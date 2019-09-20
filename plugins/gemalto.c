@@ -183,7 +183,12 @@ struct gemalto_data {
 		guint sbc;
 	} hwmon;
 	/* gnss variables */
-	DBusMessage *gnss_msg;
+	struct {
+		DBusMessage *msg;
+		char* property_name;
+		char* property_value;
+	} gnss;
+
 	/* hardware control variables */
 	DBusMessage *hc_msg;
 	gboolean powersave;
@@ -858,13 +863,13 @@ static void gnss_get_properties_cb(gboolean ok, GAtResult *result,
 	DBusMessageIter dbusiter;
 	DBusMessageIter dict;
 
-	if (data->gnss_msg == NULL)
+	if (data->gnss.msg == NULL)
 		return;
 
 	if (!ok)
 		goto error;
 
-	reply = dbus_message_new_method_return(data->gnss_msg);
+	reply = dbus_message_new_method_return(data->gnss.msg);
 	dbus_message_iter_init_append(reply, &dbusiter);
 	dbus_message_iter_open_container(&dbusiter, DBUS_TYPE_ARRAY,
 					OFONO_PROPERTIES_ARRAY_SIGNATURE,
@@ -894,12 +899,12 @@ static void gnss_get_properties_cb(gboolean ok, GAtResult *result,
 
 	ofono_dbus_dict_append(&dict, "Port", DBUS_TYPE_STRING, &port);
 	dbus_message_iter_close_container(&dbusiter, &dict);
-	__ofono_dbus_pending_reply(&data->gnss_msg, reply);
+	__ofono_dbus_pending_reply(&data->gnss.msg, reply);
 	return;
 
 error:
-	__ofono_dbus_pending_reply(&data->gnss_msg,
-			__ofono_error_failed(data->gnss_msg));
+	__ofono_dbus_pending_reply(&data->gnss.msg,
+			__ofono_error_failed(data->gnss.msg));
 }
 
 static DBusMessage *gnss_get_properties(DBusConnection *conn,
@@ -908,14 +913,14 @@ static DBusMessage *gnss_get_properties(DBusConnection *conn,
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 
-	if (data->gnss_msg != NULL)
+	if (data->gnss.msg != NULL)
 		return __ofono_error_busy(msg);
 
 	if (!g_at_chat_send(data->app, "AT^SGPSC?", sgpsc_prefix,
 					gnss_get_properties_cb, modem, NULL))
 		return __ofono_error_failed(msg);
 
-	data->gnss_msg = dbus_message_ref(msg);
+	data->gnss.msg = dbus_message_ref(msg);
 
 	return NULL;
 }
@@ -925,19 +930,29 @@ static void gnss_set_properties_cb(gboolean ok, GAtResult *result,
 {
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
+	const char *path = ofono_modem_get_path(modem);
+	DBusConnection *conn = ofono_dbus_get_connection();
 	DBusMessage *reply;
 
-	if (data->gnss_msg == NULL)
+	if (data->gnss.msg == NULL)
 		return;
 
 	if (!ok) {
-		__ofono_dbus_pending_reply(&data->gnss_msg,
-					__ofono_error_failed(data->gnss_msg));
+		__ofono_dbus_pending_reply(&data->gnss.msg,
+					__ofono_error_failed(data->gnss.msg));
 		return;
 	}
 
-	reply = dbus_message_new_method_return(data->gnss_msg);
-	__ofono_dbus_pending_reply(&data->gnss_msg, reply);
+	reply = dbus_message_new_method_return(data->gnss.msg);
+	__ofono_dbus_pending_reply(&data->gnss.msg, reply);
+
+	ofono_dbus_signal_property_changed(conn, path,
+			GNSS_INTERFACE,
+			data->gnss.property_name,
+			DBUS_TYPE_STRING, &data->gnss.property_value );
+
+	g_free(data->gnss.property_name);
+	g_free(data->gnss.property_value);
 }
 
 static DBusMessage *gnss_set_property(DBusConnection *conn,
@@ -950,7 +965,7 @@ static DBusMessage *gnss_set_property(DBusConnection *conn,
 	char *value;
 	char buf[256];
 
-	if (data->gnss_msg != NULL)
+	if (data->gnss.msg != NULL)
 		return __ofono_error_busy(msg);
 
 	if (dbus_message_iter_init(msg, &iter) == FALSE)
@@ -975,11 +990,14 @@ static DBusMessage *gnss_set_property(DBusConnection *conn,
 
 	snprintf(buf, sizeof(buf), "AT^SGPSC=\"%s\",\"%s\"", name, value);
 
+	data->gnss.property_name = strdup(name);
+	data->gnss.property_value = strdup(value);
+
 	if (!g_at_chat_send(data->app, buf, sgpsc_prefix,
 					gnss_set_properties_cb, modem, NULL))
 		return __ofono_error_failed(msg);
 
-	data->gnss_msg = dbus_message_ref(msg);
+	data->gnss.msg = dbus_message_ref(msg);
 	return NULL;
 }
 
@@ -990,6 +1008,12 @@ static const GDBusMethodTable gnss_methods[] = {
 	{ GDBUS_ASYNC_METHOD("SetProperty",
 			GDBUS_ARGS({ "property", "s" }, { "value", "v" }),
 			NULL, gnss_set_property) },
+	{ }
+};
+
+static const GDBusSignalTable gnss_signals[] = {
+	{ GDBUS_SIGNAL("PropertyChanged",
+			GDBUS_ARGS({ "name", "s" }, { "value", "v" })) },
 	{ }
 };
 
@@ -1045,7 +1069,7 @@ static void gemalto_gnss_enable_cb(gboolean ok, GAtResult *result,
 	/* Create GNSS DBus interface */
 	if (!g_dbus_register_interface(conn, path, GNSS_INTERFACE,
 					gnss_methods,
-					NULL,
+					gnss_signals,
 					NULL,
 					modem,
 					NULL)) {
@@ -1087,6 +1111,7 @@ static void gemalto_gnss_disable(struct ofono_modem *modem)
  ******************************************************************************/
 
 #define HARDWARE_CONTROL_INTERFACE OFONO_SERVICE ".gemalto.HardwareControl"
+#define HARDWARE_CONTROL_PROPERTY_POWERSAVE "Powersave"
 
 static DBusMessage *hc_get_properties(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
@@ -1103,7 +1128,7 @@ static DBusMessage *hc_get_properties(DBusConnection *conn,
 					OFONO_PROPERTIES_ARRAY_SIGNATURE,
 					&dict);
 
-	ofono_dbus_dict_append(&dict, "Powersave", DBUS_TYPE_BOOLEAN,
+	ofono_dbus_dict_append(&dict, HARDWARE_CONTROL_PROPERTY_POWERSAVE, DBUS_TYPE_BOOLEAN,
 							&data->powersave);
 	dbus_message_iter_close_container(&dbusiter, &dict);
 
@@ -1135,6 +1160,8 @@ static void gemalto_powersave_cb(gboolean ok, GAtResult *result,
 {
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
+	const char *path = ofono_modem_get_path(modem);
+	DBusConnection *conn = ofono_dbus_get_connection();
 	DBusMessage *reply;
 
 	/* flip the state in any case */
@@ -1145,6 +1172,11 @@ static void gemalto_powersave_cb(gboolean ok, GAtResult *result,
 
 	reply = dbus_message_new_method_return(data->hc_msg);
 	__ofono_dbus_pending_reply(&data->hc_msg, reply);
+
+	ofono_dbus_signal_property_changed(conn, path,
+			HARDWARE_CONTROL_INTERFACE,
+			HARDWARE_CONTROL_PROPERTY_POWERSAVE,
+			DBUS_TYPE_BOOLEAN, &data->powersave);
 }
 
 static void mbim_subscriptions(struct ofono_modem *modem, gboolean subscribe);
@@ -1170,7 +1202,7 @@ static DBusMessage *hc_set_property(DBusConnection *conn,
 
 	dbus_message_iter_get_basic(&iter, &name);
 
-	if (!g_str_equal(name, "Powersave"))
+	if (!g_str_equal(name, HARDWARE_CONTROL_PROPERTY_POWERSAVE))
 		return __ofono_error_invalid_args(msg);
 
 	dbus_message_iter_next(&iter);
@@ -1218,7 +1250,7 @@ static void gemalto_smso_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		return;
 
 	if (data->conn == GEMALTO_CONNECTION_SERIAL && ok) {
-	  ofono_modem_set_powered(modem, FALSE);
+		ofono_modem_set_powered(modem, FALSE);
 	}
 
 	reply = dbus_message_new_method_return(data->hc_msg);
@@ -1296,6 +1328,12 @@ static const GDBusMethodTable hardware_control_methods[] = {
 	{ }
 };
 
+static const GDBusSignalTable hardware_control_signals[] = {
+	{ GDBUS_SIGNAL("PropertyChanged",
+			GDBUS_ARGS({ "name", "s" }, { "value", "v" })) },
+	{ }
+};
+
 static void gemalto_hardware_control_enable(struct ofono_modem *modem)
 {
 	DBusConnection *conn = ofono_dbus_get_connection();
@@ -1304,7 +1342,7 @@ static void gemalto_hardware_control_enable(struct ofono_modem *modem)
 	/* Create Hardware Control DBus interface */
 	if (!g_dbus_register_interface(conn, path, HARDWARE_CONTROL_INTERFACE,
 					hardware_control_methods,
-					NULL,
+					hardware_control_signals,
 					NULL,
 					modem,
 					NULL)) {
@@ -1445,7 +1483,7 @@ static void gemalto_remove(struct ofono_modem *modem)
 		g_at_chat_unregister_all(data->app);
 		g_at_chat_unref(data->app);
 		if (data->mdm == data->app) {
-		  data->mdm = NULL;
+			data->mdm = NULL;
 		}
 		data->app = NULL;
 	}
