@@ -1,3 +1,0 @@
-#!/bin/sh -x
-dbus-send --print-reply --system --dest=org.ofono / org.ofono.Manager.GetModems
-

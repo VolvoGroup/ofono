@@ -147,6 +147,7 @@ struct gemalto_data {
 	guint model;
 	guint probing_timer;
 	guint init_waiting_time;
+	guint port_answers;
 	guint waiting_time;
 	guint online_timer;
 
@@ -1182,6 +1183,9 @@ static void gemalto_powersave_cb(gboolean ok, GAtResult *result,
 static void mbim_subscriptions(struct ofono_modem *modem, gboolean subscribe);
 void manage_csq_source(struct ofono_netreg *netreg, gboolean add);
 
+
+static int mbim_disable(struct ofono_modem *modem);
+
 static DBusMessage *hc_set_property(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
@@ -1231,6 +1235,9 @@ static DBusMessage *hc_set_property(DBusConnection *conn,
 
 	if(data->mbim == STATE_PRESENT)
 		mbim_subscriptions(modem, !enable);
+
+	if(enable && getenv("OFONO_GTO_OFF_WHEN_POWERSAVE"))
+		mbim_disable(modem);
 
 	if (!g_at_chat_send(data->app, "AT", none_prefix,
 				gemalto_powersave_cb, modem, NULL))
@@ -1451,6 +1458,14 @@ static void gemalto_remove(struct ofono_modem *modem)
 	if (!data)
 		return;
 
+	if (getenv("OFONO_GTO_KEEP_INTF")) { /* Remove gemalto interfaces */
+		gemalto_hardware_control_disable(modem);
+		gemalto_gnss_disable(modem);
+		gemalto_time_disable(modem);
+		gemalto_hardware_monitor_disable(modem);
+		gemalto_command_passthrough_disable(modem);
+	}
+
 	/*
 	 * Stop the probing, if present
 	*/
@@ -1519,8 +1534,16 @@ static int gemalto_ciev_simstatus_delayed(void *modem) {
 	return FALSE; /* to kill the timer */
 }
 
-static void gemalto_ciev_simstatus_notify(GAtResultIter *iter,
-					struct ofono_modem *modem)
+static void gemalto_pbready_notify(GAtResult *result, gpointer user_data) {
+	struct ofono_modem *modem = user_data;
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	struct ofono_sim *sim = data->sim;
+	DBG();
+	ofono_sim_inserted_notify(sim, true);
+}
+
+
+static void gemalto_ciev_simstatus_notify(GAtResultIter *iter, struct ofono_modem *modem)
 {
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 	struct ofono_sim *sim = data->sim;
@@ -1612,6 +1635,8 @@ static void sim_state_cb(gboolean present, gpointer user_data)
 	/* Register for specific sim status reports */
 	g_at_chat_register(data->app, "+CIEV:",
 			gemalto_ciev_notify, FALSE, modem, NULL);
+	g_at_chat_register(data->app, "+PBREADY",
+			gemalto_pbready_notify, FALSE, modem, NULL);
 
 	g_at_chat_send(data->app, "AT^SIND=\"simstatus\",1", none_prefix,
 			NULL, NULL, NULL);
@@ -1861,6 +1886,7 @@ static int gemalto_probe_device(void *user_data)
 
 	if (data->waiting_time > data->init_waiting_time+3) {
 		data->waiting_time = 0;
+		data->port_answers = 0;
 		goto failed;
 	}
 
@@ -1873,8 +1899,11 @@ static int gemalto_probe_device(void *user_data)
 		goto failed;
 
 	if(!strstr(buf, "OK")) {
-		data->probing_timer = g_timeout_add_seconds(1,
-						gemalto_probe_device, modem);
+		data->probing_timer = g_timeout_add_seconds(1, gemalto_probe_device, modem);
+		return TRUE; /* keep waiting */
+	} else if (getenv("OFONO_GTO_3SURE") && data->port_answers++<3) { /* patch for ports answering a single time and then not anymore (eg: PLS8 in SSRVSET=4 on 1st ACM port) */
+		data->waiting_time--; /* don't increase the timer for this test */
+		data->probing_timer = g_timeout_add_seconds(1, gemalto_probe_device, modem);
 		return TRUE; /* keep waiting */
 	}
 
@@ -1956,6 +1985,7 @@ static void gemalto_open_device(const char *device,
 	g_io_channel_set_buffered(data->channel, FALSE);
 	data->open_cb = func;
 	data->portfd = fd;
+	data->port_answers = 0;
 	data->probing_timer = g_timeout_add_seconds(1, gemalto_probe_device,
 									modem);
 }
@@ -2162,6 +2192,27 @@ static void mbim_device_closed(void *user_data)
 		mbim_device_unref(md->mbimd);
 
 	md->mbimd = NULL;
+}
+
+static void mbim_radio_off_for_disable(struct mbim_message *message, void *user);
+static int mbim_disable(struct ofono_modem *modem)
+{
+	struct gemalto_data *md = ofono_modem_get_data(modem);
+	struct mbim_message *message;
+
+	DBG("%p", modem);
+
+	message = mbim_message_new(mbim_uuid_basic_connect,
+					MBIM_CID_RADIO_STATE,
+					MBIM_COMMAND_TYPE_SET);
+	mbim_message_set_arguments(message, "u", 0);
+
+	if (mbim_device_send(md->mbimd, 0, message,
+				mbim_radio_off_for_disable, modem, NULL) > 0)
+		return -EINPROGRESS;
+
+	mbim_device_closed(modem);
+	return 0;
 }
 
 static int mbim_enable(struct ofono_modem *modem)
@@ -2529,6 +2580,9 @@ static int gemalto_enable(struct ofono_modem *modem)
 		data->mbim = STATE_PROBE;
 	}
 
+	if (m == 0x62) /* remove the modem port for this enumeration (connected on ASC0) */
+		ofono_modem_set_string(modem, "Modem", NULL);
+
 	set_from_model(data);
 
 	if ((data->mbim == STATE_PROBE) && ctl && net) {
@@ -2717,7 +2771,7 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 			struct gemalto_mbim_composite comp;
 			comp.device = data->mbimd;
 			comp.chat = data->app;
-			comp.at_cid = 4;
+			comp.at_cid = 6;
 			gc = ofono_gprs_context_create(modem, 0, "gemaltomodemmbim", &comp);
 		} else /* model == 0x5d, 0x62 (standard mbim driver) */
 			gc = ofono_gprs_context_create(modem, 0, "mbim", data->mbimd);
@@ -2892,12 +2946,13 @@ static int gemalto_disable(struct ofono_modem *modem)
 	if (data->conn == GEMALTO_CONNECTION_SERIAL)
 		return gemalto_disable_serial(modem);
 
-	// Remove gemalto interfaces
-	gemalto_hardware_control_disable(modem);
-	gemalto_gnss_disable(modem);
-	gemalto_time_disable(modem);
-	gemalto_hardware_monitor_disable(modem);
-	gemalto_command_passthrough_disable(modem);
+	if(!getenv("OFONO_GTO_KEEP_INTF")) { /* Remove gemalto interfaces */
+		gemalto_hardware_control_disable(modem);
+		gemalto_gnss_disable(modem);
+		gemalto_time_disable(modem);
+		gemalto_hardware_monitor_disable(modem);
+		gemalto_command_passthrough_disable(modem);
+	}
 
 	if (data->mbim == STATE_PRESENT) {
 		message = mbim_message_new(mbim_uuid_basic_connect,
