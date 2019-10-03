@@ -55,16 +55,16 @@ static void info_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	size_t len=0;
 
 	decode_at_error(&error, g_at_result_final_response(result));
-	if(!ok){
+	if (!ok) {
 		cb(&error, NULL, cbd->data);
 		return;
 	}
 	g_at_result_iter_init(&iter, result);
-	while(g_at_result_iter_next(&iter, NULL))
+	while (g_at_result_iter_next(&iter, NULL))
 		len += strlen(g_at_result_iter_raw_line(&iter))+1;
 	attr = g_new0(char, len+1);
 	g_at_result_iter_init(&iter, result);
-	while(g_at_result_iter_next(&iter, NULL))
+	while (g_at_result_iter_next(&iter, NULL))
 		sprintf(attr+strlen(attr),*attr?" %s":"%s", g_at_result_iter_raw_line(&iter));
 	cb(&error, attr, cbd->data);
 	return;
@@ -76,8 +76,8 @@ static void at_query_information(struct ofono_devinfo *info, ofono_devinfo_query
 	struct devinfo_data *dd = ofono_devinfo_get_data(info);
 
 	const char *info_cmd = "ATI";
-	if(dd->vendor==OFONO_VENDOR_GEMALTO) info_cmd = "ATI1";
-	if(dd->vendor==OFONO_VENDOR_ZTE_VANILLA) info_cmd = "AT";
+	if (dd->vendor==OFONO_VENDOR_GEMALTO) info_cmd = "ATI1";
+	if (dd->vendor==OFONO_VENDOR_ZTE_VANILLA) info_cmd = "AT";
 
 	if (g_at_chat_send(dd->chat, info_cmd, NULL, info_cb, cbd, g_free) > 0)
 		return;
@@ -184,7 +184,7 @@ static int at_devinfo_probe(struct ofono_devinfo *info, unsigned int vendor,
 	dd->vendor = vendor;
 
 	ofono_devinfo_set_data(info, dd);
-	if(vendor==OFONO_VENDOR_ZTE_VANILLA)
+	if (vendor==OFONO_VENDOR_ZTE_VANILLA)
 		g_at_chat_send(dd->chat, "AT", none_prefix, capability_cb, info, NULL);
 	else
 		g_at_chat_send(dd->chat, "AT+GCAP", gcap_prefix, capability_cb, info, NULL);

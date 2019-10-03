@@ -73,6 +73,11 @@ Properties	boolean Powered [readwrite]
 
 			This is usually obtained by the +CGMM AT command.
 
+		string Information [readonly, optional]
+
+			String repesenting additional information not to be
+			found elsewhere.
+
 		string Revision [readonly, optional]
 
 			String representing the revision of the modem device.
