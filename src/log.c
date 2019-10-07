@@ -330,7 +330,7 @@ void __ofono_log_cleanup(void)
 	closelog();
 
 #ifdef __GLIBC__
-	signal_setup(SIG_DFL);
+	// signal_setup(SIG_DFL); // We don't want to register signal handlers since that prevents core dump.
 #endif
 
 	g_strfreev(enabled);
