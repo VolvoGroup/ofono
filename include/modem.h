@@ -110,15 +110,15 @@ void ofono_modem_set_driver(struct ofono_modem *modem, const char *type);
 
 int ofono_modem_set_string(struct ofono_modem *modem,
 				const char *key, const char *value);
-const char *ofono_modem_get_string(struct ofono_modem *modem, const char *key);
+const char *ofono_modem_get_string(const struct ofono_modem *modem, const char *key);
 
 int ofono_modem_set_integer(struct ofono_modem *modem,
 				const char *key, int value);
-int ofono_modem_get_integer(struct ofono_modem *modem, const char *key);
+int ofono_modem_get_integer(const struct ofono_modem *modem, const char *key);
 
 int ofono_modem_set_boolean(struct ofono_modem *modem,
 				const char *key, ofono_bool_t value);
-ofono_bool_t ofono_modem_get_boolean(struct ofono_modem *modem,
+ofono_bool_t ofono_modem_get_boolean(const struct ofono_modem *modem,
 					const char *key);
 
 int ofono_modem_driver_register(const struct ofono_modem_driver *);

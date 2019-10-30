@@ -756,17 +756,17 @@ struct mbim_message *_mbim_message_build(const void *header,
 	return msg;
 }
 
-uint32_t mbim_message_get_error(struct mbim_message *message)
+uint32_t mbim_message_get_error(const struct mbim_message *message)
 {
-	struct mbim_message_header *hdr;
+	const struct mbim_message_header *hdr;
 
 	if (unlikely(!message))
-		return false;
+		return 0;
 
 	if (unlikely(!message->sealed))
-		return false;
+		return 0;
 
-	hdr = (struct mbim_message_header *) message->header;
+	hdr = (const struct mbim_message_header *) message->header;
 
 	if (L_LE32_TO_CPU(hdr->type) != MBIM_COMMAND_DONE)
 		return 0;
@@ -774,7 +774,7 @@ uint32_t mbim_message_get_error(struct mbim_message *message)
 	return message->status;
 }
 
-uint32_t mbim_message_get_cid(struct mbim_message *message)
+uint32_t mbim_message_get_cid(const struct mbim_message *message)
 {
 	if (unlikely(!message))
 		return false;
@@ -782,7 +782,7 @@ uint32_t mbim_message_get_cid(struct mbim_message *message)
 	return message->cid;
 }
 
-const uint8_t *mbim_message_get_uuid(struct mbim_message *message)
+const uint8_t *mbim_message_get_uuid(const struct mbim_message *message)
 {
 	if (unlikely(!message))
 		return false;
@@ -790,7 +790,7 @@ const uint8_t *mbim_message_get_uuid(struct mbim_message *message)
 	return message->uuid;
 }
 
-bool mbim_message_get_arguments(struct mbim_message *message,
+bool mbim_message_get_arguments(const struct mbim_message *message,
 						const char *signature, ...)
 {
 	struct mbim_message_iter iter;
@@ -822,7 +822,7 @@ bool mbim_message_get_arguments(struct mbim_message *message,
 	return result;
 }
 
-static bool _mbim_message_get_data(struct mbim_message *message,
+static bool _mbim_message_get_data(const struct mbim_message *message,
 					uint32_t offset,
 					void *dest, size_t len)
 {
@@ -864,14 +864,14 @@ static bool _mbim_message_get_data(struct mbim_message *message,
 	return true;
 }
 
-bool mbim_message_get_ipv4_address(struct mbim_message *message,
+bool mbim_message_get_ipv4_address(const struct mbim_message *message,
 					uint32_t offset,
 					struct in_addr *addr)
 {
 	return _mbim_message_get_data(message, offset, &addr->s_addr, 4);
 }
 
-bool mbim_message_get_ipv4_element(struct mbim_message *message,
+bool mbim_message_get_ipv4_element(const struct mbim_message *message,
 					uint32_t offset,
 					uint32_t *prefix_len,
 					struct in_addr *addr)
@@ -887,14 +887,14 @@ bool mbim_message_get_ipv4_element(struct mbim_message *message,
 	return true;
 }
 
-bool mbim_message_get_ipv6_address(struct mbim_message *message,
+bool mbim_message_get_ipv6_address(const struct mbim_message *message,
 					uint32_t offset,
 					struct in6_addr *addr)
 {
 	return _mbim_message_get_data(message, offset, addr->s6_addr, 16);
 }
 
-bool mbim_message_get_ipv6_element(struct mbim_message *message,
+bool mbim_message_get_ipv6_element(const struct mbim_message *message,
 					uint32_t offset,
 					uint32_t *prefix_len,
 					struct in6_addr *addr)

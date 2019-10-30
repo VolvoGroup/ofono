@@ -51,23 +51,23 @@ struct mbim_message *mbim_message_new(const uint8_t *uuid, uint32_t cid,
 struct mbim_message *mbim_message_ref(struct mbim_message *msg);
 void mbim_message_unref(struct mbim_message *msg);
 
-uint32_t mbim_message_get_error(struct mbim_message *message);
-uint32_t mbim_message_get_cid(struct mbim_message *message);
-const uint8_t *mbim_message_get_uuid(struct mbim_message *message);
-bool mbim_message_get_arguments(struct mbim_message *message,
+uint32_t mbim_message_get_error(const struct mbim_message *message);
+uint32_t mbim_message_get_cid(const struct mbim_message *message);
+const uint8_t *mbim_message_get_uuid(const struct mbim_message *message);
+bool mbim_message_get_arguments(const struct mbim_message *message,
 						const char *signature, ...);
 
-bool mbim_message_get_ipv4_address(struct mbim_message *message,
+bool mbim_message_get_ipv4_address(const struct mbim_message *message,
 					uint32_t offset,
 					struct in_addr *addr);
-bool mbim_message_get_ipv4_element(struct mbim_message *message,
+bool mbim_message_get_ipv4_element(const struct mbim_message *message,
 					uint32_t offset,
 					uint32_t *prefix_len,
 					struct in_addr *addr);
-bool mbim_message_get_ipv6_address(struct mbim_message *essage,
+bool mbim_message_get_ipv6_address(const struct mbim_message *essage,
 					uint32_t offset,
 					struct in6_addr *addr);
-bool mbim_message_get_ipv6_element(struct mbim_message *message,
+bool mbim_message_get_ipv6_element(const struct mbim_message *message,
 					uint32_t offset,
 					uint32_t *prefix_len,
 					struct in6_addr *addr);

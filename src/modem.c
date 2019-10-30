@@ -1805,7 +1805,7 @@ static int set_modem_property(struct ofono_modem *modem, const char *name,
 	return 0;
 }
 
-static gboolean get_modem_property(struct ofono_modem *modem, const char *name,
+static gboolean get_modem_property(const struct ofono_modem *modem, const char *name,
 					enum property_type type,
 					void *value)
 {
@@ -1854,7 +1854,7 @@ int ofono_modem_set_boolean(struct ofono_modem *modem,
 	return set_modem_property(modem, key, PROPERTY_TYPE_BOOLEAN, &value);
 }
 
-const char *ofono_modem_get_string(struct ofono_modem *modem, const char *key)
+const char *ofono_modem_get_string(const struct ofono_modem *modem, const char *key)
 {
 	const char *value;
 
@@ -1865,7 +1865,7 @@ const char *ofono_modem_get_string(struct ofono_modem *modem, const char *key)
 	return value;
 }
 
-int ofono_modem_get_integer(struct ofono_modem *modem, const char *key)
+int ofono_modem_get_integer(const struct ofono_modem *modem, const char *key)
 {
 	int value;
 
@@ -1876,7 +1876,7 @@ int ofono_modem_get_integer(struct ofono_modem *modem, const char *key)
 	return value;
 }
 
-ofono_bool_t ofono_modem_get_boolean(struct ofono_modem *modem, const char *key)
+ofono_bool_t ofono_modem_get_boolean(const struct ofono_modem *modem, const char *key)
 {
 	ofono_bool_t value;
 

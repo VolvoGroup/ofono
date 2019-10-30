@@ -224,7 +224,7 @@ static void gemalto_qmi_debug(const char *str, void *user_data)
 		ofono_info("%s%s", prefix, str);
 }
 
-static const char *gemalto_get_string(struct ofono_modem *modem, const char *k)
+static const char *gemalto_get_string(const struct ofono_modem *modem, const char *k)
 {
 	const char *v;
 
@@ -1401,7 +1401,7 @@ static int mbim_parse_descriptors(struct gemalto_data *md, const char *file)
 	return 0;
 }
 
-static int mbim_probe(struct ofono_modem *modem, struct gemalto_data *data)
+static int mbim_probe(const struct ofono_modem *modem, struct gemalto_data *data)
 {
 	const char *descriptors;
 	int err;
