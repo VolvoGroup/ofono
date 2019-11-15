@@ -1297,6 +1297,7 @@ static void at_signal_strength(struct ofono_netreg *netreg,
 
 	switch(nd->vendor) {
 	case OFONO_VENDOR_GEMALTO:
+	case OFONO_VENDOR_ZTE_VANILLA:
 		break;
 	default:
 		/*
@@ -1626,7 +1627,7 @@ static void creg_notify(GAtResult *result, gpointer user_data)
 					option_query_tech_cb, tq, g_free) > 0)
 			return;
 		break;
-    case OFONO_VENDOR_GEMALTO:
+	case OFONO_VENDOR_GEMALTO:
 		if (tech!=-1)
 			break;  /* technology already returned by +CREG, so run the notify label */
 		if (g_at_chat_send(nd->chat, "AT^SMONI",
@@ -2142,6 +2143,14 @@ static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		g_at_chat_register(nd->chat, "+CESQ:", cesq_notify, FALSE, netreg, NULL); /* Register for +CESQ */
 		manage_csq_source(netreg, TRUE); /* start periodic polling of CSQ/CESQ */
 		g_at_chat_send(nd->chat, "AT^SIND=\"ceer\",1,99", none_prefix, NULL, NULL, NULL); /* Activate reject cause report */
+		break;
+	case OFONO_VENDOR_ZTE_VANILLA:
+		nd->signal_min = 0;
+		nd->signal_max = 5;
+		nd->signal_invalid = 99;
+		g_at_chat_register(nd->chat, "+CSQ:", csq_notify, FALSE, netreg, NULL); /* Register for +CSQ */
+		g_at_chat_register(nd->chat, "+CESQ:", cesq_notify, FALSE, netreg, NULL); /* Register for +CESQ */
+		manage_csq_source(netreg, TRUE); /* start periodic polling of CSQ/CESQ */
 		break;
 	case OFONO_VENDOR_NOKIA:
 	case OFONO_VENDOR_SAMSUNG:

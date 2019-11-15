@@ -47,6 +47,7 @@ static const char *cgreg_prefix[] = { "+CGREG:", NULL };
 static const char *cereg_prefix[] = { "+CEREG:", NULL };
 static const char *c5greg_prefix[] = { "+C5GREG:", NULL };
 static const char *cgdcont_prefix[] = { "+CGDCONT:", NULL };
+static const char *cops_prefix[] = { "+COPS:", NULL };
 static const char *none_prefix[] = { NULL };
 
 struct gprs_data {
@@ -354,6 +355,7 @@ static int cops_cb(gboolean ok, GAtResult *result)
 	if (!g_at_result_iter_next_number(&iter, &tech))
 		tech = -1; /* make sure it has not been set to something */
 error:
+	DBG("current tech: %d", tech);
 	return tech;
 }
 
@@ -364,6 +366,7 @@ static void netreg_notify_cb(gboolean ok, GAtResult *result, gpointer user_data)
 	int cops_tech = cops_cb(ok, result);
 
 	if (cops_tech == -1) { /* take the indicator status */
+		DBG();
 		ofono_gprs_status_notify(nri->gprs, nri->status);
 		return;
 	}
@@ -413,7 +416,7 @@ static void netreg_notify(struct ofono_gprs *gprs, const char* ind, int status,
 	nri->ind = ind;
 	nri->status = status;
 	nri->bearer = bearer;
-	g_at_chat_send(gd->chat, "AT+COPS?", none_prefix, netreg_notify_cb,
+	g_at_chat_send(gd->chat, "AT+COPS?", cops_prefix, netreg_notify_cb,
 		nri, g_free);
 }
 
@@ -785,6 +788,7 @@ static void gprs_initialized(struct ofono_gprs *gprs)
 
 	switch (gd->vendor) {
 	case OFONO_VENDOR_GEMALTO:
+	case OFONO_VENDOR_ZTE_VANILLA:
 		break;
 	default:
 		g_at_chat_send(gd->chat, "AT+CGAUTO=0", none_prefix, NULL, NULL,
@@ -1044,8 +1048,6 @@ static int at_gprs_probe(struct ofono_gprs *gprs,
 {
 	GAtChat *chat = data;
 	struct gprs_data *gd;
-	int autoattach;
-	struct ofono_modem* modem=ofono_gprs_get_modem(gprs);
 
 	gd = g_try_new0(struct gprs_data, 1);
 	if (gd == NULL)
@@ -1056,12 +1058,9 @@ static int at_gprs_probe(struct ofono_gprs *gprs,
 
 	ofono_gprs_set_data(gprs, gd);
 
-	if (gd->vendor == OFONO_VENDOR_GEMALTO) {
-		autoattach=ofono_modem_get_integer(modem, "GemaltoAutoAttach");
-		/* set autoattach */
-		gd->auto_attach = (autoattach == 1);
-		/* skip the cgdcont scanning: set manually */
-		test_and_set_regstatus(gprs);
+	if (gd->vendor == OFONO_VENDOR_GEMALTO || gd->vendor == OFONO_VENDOR_ZTE_VANILLA) {
+		gd->auto_attach = 1; /* ofono_modem_get_integer(ofono_gprs_get_modem(gprs), "GemaltoAutoAttach") == 1; // RFU check */
+		test_and_set_regstatus(gprs); /* skip the cgdcont scanning: set manually */
 	} else {
 		g_at_chat_send(gd->chat, "AT+CGDCONT=?", cgdcont_prefix,
 						at_cgdcont_test_cb, gprs, NULL);
