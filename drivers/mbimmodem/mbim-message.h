@@ -17,6 +17,9 @@
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
+ *  References below are to the MBIM specification:
+ *  http://caxapa.ru/thumbs/334029/MBIM_v1_0_USBIF_FINAL.pdf
+ *
  */
 
 #include <stdint.h>
@@ -25,6 +28,12 @@
 
 struct mbim_message;
 struct mbim_message_iter;
+
+/* MBIM v1.0, table 9-15 */
+enum mbim_status_code {
+	MBIM_STATUS_SUCCESS = 0,
+	MBIM_STATUS_FAILURE = 2
+};
 
 enum mbim_command_type {
 	MBIM_COMMAND_TYPE_QUERY = 0,
@@ -51,6 +60,7 @@ struct mbim_message *mbim_message_new(const uint8_t *uuid, uint32_t cid,
 struct mbim_message *mbim_message_ref(struct mbim_message *msg);
 void mbim_message_unref(struct mbim_message *msg);
 
+/* Returns 0 if no error Table 9-15 */
 uint32_t mbim_message_get_error(const struct mbim_message *message);
 uint32_t mbim_message_get_cid(const struct mbim_message *message);
 const uint8_t *mbim_message_get_uuid(const struct mbim_message *message);

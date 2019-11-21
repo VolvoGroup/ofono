@@ -23,11 +23,15 @@ struct idmap;
 
 struct idmap *idmap_new(unsigned int size);
 void idmap_free(struct idmap *idmap);
+/* Mark id as not taken */
 void idmap_put(struct idmap *idmap, unsigned int id);
+/* Mark id as taken */
 void idmap_take(struct idmap *idmap, unsigned int id);
-int idmap_find(struct idmap *idmap, unsigned int id);
+/* Returns 0 if not id taken */
+int idmap_find(const struct idmap *idmap, unsigned int id);
+/* Take next a free id */
 unsigned int idmap_alloc(struct idmap *idmap);
 unsigned int idmap_alloc_next(struct idmap *idmap, unsigned int last);
 struct idmap *idmap_new_from_range(unsigned int min, unsigned int max);
-unsigned int idmap_get_min(struct idmap *idmap);
-unsigned int idmap_get_max(struct idmap *idmap);
+unsigned int idmap_get_min(const struct idmap *idmap);
+unsigned int idmap_get_max(const struct idmap *idmap);

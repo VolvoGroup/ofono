@@ -165,7 +165,7 @@ void idmap_take(struct idmap *idmap, unsigned int id)
 	idmap->bits[offset] |= 1UL << (bit % BITS_PER_LONG);
 }
 
-int idmap_find(struct idmap *idmap, unsigned int id)
+int idmap_find(const struct idmap *idmap, unsigned int id)
 {
 	unsigned int bit = id - idmap->min;
 	unsigned int offset;
@@ -202,12 +202,12 @@ unsigned int idmap_alloc_next(struct idmap *idmap, unsigned int last)
 	return bit + idmap->min;
 }
 
-unsigned int idmap_get_min(struct idmap *idmap)
+unsigned int idmap_get_min(const struct idmap *idmap)
 {
 	return idmap->min;
 }
 
-unsigned int idmap_get_max(struct idmap *idmap)
+unsigned int idmap_get_max(const struct idmap *idmap)
 {
 	return idmap->max;
 }

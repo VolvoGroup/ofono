@@ -17,11 +17,14 @@
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
+ *  References below are to the MBIM specification:
+ *  http://caxapa.ru/thumbs/334029/MBIM_v1_0_USBIF_FINAL.pdf
+ *
  */
 
 #define align_len(len, boundary) (((len)+(boundary)-1) & ~((boundary)-1))
 
-enum mbim_control_message {
+enum mbim_control_message { /* MBIM v1.0, from Table 9-3 & Table 9-9*/
 	MBIM_OPEN_MSG = 0x1,
 	MBIM_CLOSE_MSG = 0x2,
 	MBIM_COMMAND_MSG = 0x3,
@@ -35,9 +38,9 @@ enum mbim_control_message {
 
 /* MBIM v1.0, Section 9.1 */
 struct mbim_message_header {
-	__le32 type;
-	__le32 len;
-	__le32 tid;
+	__le32 type; /* From Table 9-3 */
+	__le32 len;  /* in bytes */
+	__le32 tid;  /* Transaction Id (unique while outstanding) */
 } __attribute__ ((packed));
 
 /* MBIM v1.0, Section 9.1 */

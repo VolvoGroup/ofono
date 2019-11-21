@@ -17,6 +17,9 @@
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
+ *  References below are to the MBIM specification:
+ *  http://caxapa.ru/thumbs/334029/MBIM_v1_0_USBIF_FINAL.pdf
+ *
  */
 
 struct mbim_device;
@@ -68,7 +71,7 @@ struct mbim_message;
 
 #define MBIM_CID_DSS_CONNECT			1
 
-/* Table 10-11 */
+/* MBIM v1.0, from table 10-11 */
 enum mbim_data_class {
 	MBIM_DATA_CLASS_NONE		= 0x00,
 	MBIM_DATA_CLASS_GPRS		= 0x01,
@@ -85,6 +88,15 @@ enum mbim_data_class {
 	MBIM_DATA_CLASS_1XEVDO_REVB	= 0x200000,
 	MBIM_DATA_CLASS_UMB		= 0x400000,
 	MBIM_DATA_CLASS_CUSTOM		= 0x80000000,
+};
+
+/* MBIM v1.0, from table 10-64 */
+enum mbim_activation_state {
+	MBIM_ACTIVATION_STATE_UNKNOWN      = 0,
+	MBIM_ACTIVATION_STATE_ACTIVATED    = 1,
+	MBIM_ACTIVATION_STATE_ACTIVATING   = 2,
+	MBIM_ACTIVATION_STATE_DEACTIVATED  = 3,
+	MBIM_ACTIVATION_STATE_DEACTIVATING = 4
 };
 
 typedef void (*mbim_device_debug_func_t) (const char *str, void *user_data);

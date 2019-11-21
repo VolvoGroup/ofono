@@ -457,7 +457,7 @@ static void mbim_connect_notify(struct mbim_message *message, void *user)
 	l_uuid_to_string(context_type, uuidstr, sizeof(uuidstr));
 	DBG("context_type: %s, nw_error: %u", uuidstr, nw_error);
 
-	if(activation_state!=3) // context deactivated
+	if (activation_state!=MBIM_ACTIVATION_STATE_DEACTIVATED) // context deactivated
 		return;
 	ofono_gprs_context_deactivated(gc, gcd->active_context);
 	gcd->active_context = 0;
