@@ -123,6 +123,12 @@ static const char *sctm_prefix[] = { "^SCTM:", NULL };
 static const char *sbv_prefix[] = { "^SBV:", NULL };
 static const char *sqport_prefix[] = { "^SQPORT:", NULL };
 static const char *sgpsc_prefix[] = { "^SGPSC:", NULL };
+static const char scfg_2g_parameter[] = "Radio/Band/2G";
+static const char scfg_3g_parameter[] = "Radio/Band/3G";
+static const char scfg_4g_parameter[] = "Radio/Band/4G";
+#define BANDMASK_LENGTH 10
+
+typedef char* (*SetFunc)(gboolean enable, struct ofono_modem *modem);
 
 typedef void (*OpenResultFunc)(gboolean success, struct ofono_modem *modem);
 
@@ -194,6 +200,12 @@ struct gemalto_data {
 	/* hardware control variables */
 	DBusMessage *hc_msg;
 	gboolean powersave;
+	gboolean block_2g;
+	gboolean block_3g;
+	gboolean block_lte;
+	char bandmask_2g[BANDMASK_LENGTH];
+	char bandmask_3g[BANDMASK_LENGTH];
+	char bandmask_4g[2][BANDMASK_LENGTH];
 };
 
 /*******************************************************************************
@@ -1114,6 +1126,9 @@ static void gemalto_gnss_disable(struct ofono_modem *modem)
 
 #define HARDWARE_CONTROL_INTERFACE OFONO_SERVICE ".gemalto.HardwareControl"
 #define HARDWARE_CONTROL_PROPERTY_POWERSAVE "Powersave"
+#define HARDWARE_CONTROL_PROPERTY_BLOCK_2G "Block2G"
+#define HARDWARE_CONTROL_PROPERTY_BLOCK_3G "Block3G"
+#define HARDWARE_CONTROL_PROPERTY_BLOCK_LTE "BlockLTE"
 
 static DBusMessage *hc_get_properties(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
@@ -1130,8 +1145,20 @@ static DBusMessage *hc_get_properties(DBusConnection *conn,
 					OFONO_PROPERTIES_ARRAY_SIGNATURE,
 					&dict);
 
-	ofono_dbus_dict_append(&dict, HARDWARE_CONTROL_PROPERTY_POWERSAVE, DBUS_TYPE_BOOLEAN,
+	ofono_dbus_dict_append(&dict, HARDWARE_CONTROL_PROPERTY_POWERSAVE,
+							DBUS_TYPE_BOOLEAN,
 							&data->powersave);
+	if (data->model == 0x65) {		/* FIXME: Should be an enum - ALAS5 */
+		ofono_dbus_dict_append(&dict, HARDWARE_CONTROL_PROPERTY_BLOCK_2G,
+								DBUS_TYPE_BOOLEAN,
+								&data->block_2g);
+		ofono_dbus_dict_append(&dict, HARDWARE_CONTROL_PROPERTY_BLOCK_3G,
+								DBUS_TYPE_BOOLEAN,
+								&data->block_3g);
+		ofono_dbus_dict_append(&dict, HARDWARE_CONTROL_PROPERTY_BLOCK_LTE,
+								DBUS_TYPE_BOOLEAN,
+								&data->block_lte);
+	}
 	dbus_message_iter_close_container(&dbusiter, &dict);
 
 	return reply;
@@ -1162,8 +1189,6 @@ static void gemalto_powersave_cb(gboolean ok, GAtResult *result,
 {
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
-	const char *path = ofono_modem_get_path(modem);
-	DBusConnection *conn = ofono_dbus_get_connection();
 	DBusMessage *reply;
 
 	/* flip the state in any case */
@@ -1175,36 +1200,146 @@ static void gemalto_powersave_cb(gboolean ok, GAtResult *result,
 	reply = dbus_message_new_method_return(data->hc_msg);
 	__ofono_dbus_pending_reply(&data->hc_msg, reply);
 
-	ofono_dbus_signal_property_changed(conn, path,
+	ofono_dbus_signal_property_changed(
+			ofono_dbus_get_connection(),
+			ofono_modem_get_path(user_data),
 			HARDWARE_CONTROL_INTERFACE,
 			HARDWARE_CONTROL_PROPERTY_POWERSAVE,
 			DBUS_TYPE_BOOLEAN, &data->powersave);
 }
 
+static void hc_set_property_block_2g_cb(gboolean ok, GAtResult *result,
+				gpointer user_data)
+{
+	struct ofono_modem *modem = user_data;
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+
+	data->block_2g = !data->block_2g;
+
+	ofono_dbus_signal_property_changed(
+			ofono_dbus_get_connection(),
+			ofono_modem_get_path(modem),
+			HARDWARE_CONTROL_INTERFACE,
+			HARDWARE_CONTROL_PROPERTY_BLOCK_2G,
+			DBUS_TYPE_BOOLEAN,
+			&data->block_2g);
+}
+
+static void hc_set_property_block_3g_cb(gboolean ok, GAtResult *result,
+				gpointer user_data)
+{
+	struct ofono_modem *modem = user_data;
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+
+	data->block_3g = !data->block_3g;
+
+	ofono_dbus_signal_property_changed(
+			ofono_dbus_get_connection(),
+			ofono_modem_get_path(modem),
+			HARDWARE_CONTROL_INTERFACE,
+			HARDWARE_CONTROL_PROPERTY_BLOCK_3G,
+			DBUS_TYPE_BOOLEAN,
+			&data->block_3g);
+}
+
+static void hc_set_property_block_lte_cb(gboolean ok, GAtResult *result,
+				gpointer user_data)
+{
+	struct ofono_modem *modem = user_data;
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+
+	data->block_lte = !data->block_lte;
+
+	ofono_dbus_signal_property_changed(
+			ofono_dbus_get_connection(),
+			ofono_modem_get_path(modem),
+			HARDWARE_CONTROL_INTERFACE,
+			HARDWARE_CONTROL_PROPERTY_BLOCK_LTE,
+			DBUS_TYPE_BOOLEAN,
+			&data->block_lte);
+}
+
 static void mbim_subscriptions(struct ofono_modem *modem, gboolean subscribe);
 void manage_csq_source(struct ofono_netreg *netreg, gboolean add);
 
-static DBusMessage *hc_set_property(DBusConnection *conn,
-					DBusMessage *msg, void *user_data)
+static char* execute_at_commands_set_powersave(
+		gboolean enable,
+		struct ofono_modem *modem)
+{
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	gemalto_exec_stored_cmd(modem, enable ? "power_mode_powersave" :
+							"power_mode_normal");
+
+	gnss_exec_stored_param(modem, enable ? "gnss_powersave" :
+								"gnss_normal");
+
+	if(data->netreg)
+		manage_csq_source(data->netreg, !enable);
+
+	if(data->mbim == STATE_PRESENT)
+		mbim_subscriptions(modem, !enable);
+
+	return "AT";
+}
+
+static char* at_command_set_2g_bands(
+		gboolean block,
+		struct ofono_modem *modem)
+{
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	static char at_command[50];
+
+	snprintf(at_command, sizeof at_command, "AT^SCFG=\"%s\",\"%s\"",
+					scfg_2g_parameter,
+					block?"00000000":data->bandmask_2g);
+
+	return at_command;
+}
+
+static char* at_command_set_3g_bands(
+		gboolean block,
+		struct ofono_modem *modem)
+{
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	static char at_command[50];
+
+	snprintf(at_command, sizeof at_command, "AT^SCFG=\"%s\",\"%s\"",
+					scfg_3g_parameter,
+					block?"00000000":data->bandmask_3g);
+
+	return at_command;
+}
+
+static char* at_command_set_4g_bands(
+		gboolean block,
+		struct ofono_modem *modem)
+{
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	static char at_command[50];
+
+	snprintf(at_command, sizeof at_command, "AT^SCFG=\"%s\",\"%s\",\"%s\"",
+					scfg_4g_parameter,
+					block?"00000000":data->bandmask_4g[0],
+					block?"00000000":data->bandmask_4g[1]);
+
+	return at_command;
+}
+
+static DBusMessage *hc_set_boolean_property(
+				DBusMessage *msg,
+				gpointer user_data,
+				const char* property,
+				gboolean* property_value,
+				SetFunc set_func,
+				GAtResultFunc func,
+				gboolean asynch)
 {
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 	DBusMessageIter iter, var;
-	const char *name;
 	gboolean enable;
 
-	if (data->hc_msg != NULL)
-		return __ofono_error_busy(msg);
-
 	if (dbus_message_iter_init(msg, &iter) == FALSE)
-		return __ofono_error_invalid_args(msg);
-
-	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING)
-		return __ofono_error_invalid_args(msg);
-
-	dbus_message_iter_get_basic(&iter, &name);
-
-	if (!g_str_equal(name, HARDWARE_CONTROL_PROPERTY_POWERSAVE))
 		return __ofono_error_invalid_args(msg);
 
 	dbus_message_iter_next(&iter);
@@ -1219,27 +1354,80 @@ static DBusMessage *hc_set_property(DBusConnection *conn,
 
 	dbus_message_iter_get_basic(&var, &enable);
 
-	if (data->powersave == enable)
+	if (*property_value == enable)
 		return dbus_message_new_method_return(msg);
 
-	gemalto_exec_stored_cmd(modem, enable ? "power_mode_powersave" :
-							"power_mode_normal");
-
-	gnss_exec_stored_param(modem, enable ? "gnss_powersave" :
-								"gnss_normal");
-
-	if(data->netreg)
-		manage_csq_source(data->netreg, !enable);
-
-	if(data->mbim == STATE_PRESENT)
-		mbim_subscriptions(modem, !enable);
-
-	if (!g_at_chat_send(data->app, "AT", none_prefix,
-				gemalto_powersave_cb, modem, NULL))
+	if (!g_at_chat_send(data->app,
+			set_func(enable, modem),
+			none_prefix, func, modem, NULL))
 		return __ofono_error_failed(msg);
+
+	if (asynch) {
+		return dbus_message_new_method_return(msg);
+	}
 
 	data->hc_msg = dbus_message_ref(msg);
 	return NULL;
+}
+
+static DBusMessage *hc_set_property(DBusConnection *conn,
+					DBusMessage *msg, void *user_data)
+{
+	struct ofono_modem *modem = user_data;
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	DBusMessageIter iter;
+	const char *name;
+
+	if (data->hc_msg != NULL)
+		return __ofono_error_busy(msg);
+
+	if (dbus_message_iter_init(msg, &iter) == FALSE)
+		return __ofono_error_invalid_args(msg);
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING)
+		return __ofono_error_invalid_args(msg);
+
+	dbus_message_iter_get_basic(&iter, &name);
+
+	if (g_str_equal(name, HARDWARE_CONTROL_PROPERTY_POWERSAVE) ) {
+		return hc_set_boolean_property(
+						msg,
+						user_data,
+						HARDWARE_CONTROL_PROPERTY_POWERSAVE,
+						&data->powersave,
+						execute_at_commands_set_powersave,
+						gemalto_powersave_cb,
+						FALSE);
+	} else if (g_str_equal(name, HARDWARE_CONTROL_PROPERTY_BLOCK_2G) ) {
+		return hc_set_boolean_property(
+						msg,
+						user_data,
+						HARDWARE_CONTROL_PROPERTY_BLOCK_2G,
+						&data->block_2g,
+						at_command_set_2g_bands,
+						hc_set_property_block_2g_cb,
+						TRUE);
+	} else if (g_str_equal(name, HARDWARE_CONTROL_PROPERTY_BLOCK_3G) ) {
+		return hc_set_boolean_property(
+						msg,
+						user_data,
+						HARDWARE_CONTROL_PROPERTY_BLOCK_3G,
+						&data->block_3g,
+						at_command_set_3g_bands,
+						hc_set_property_block_3g_cb,
+						TRUE);
+	} else if (g_str_equal(name, HARDWARE_CONTROL_PROPERTY_BLOCK_LTE) ) {
+		return hc_set_boolean_property(
+						msg,
+						user_data,
+						HARDWARE_CONTROL_PROPERTY_BLOCK_LTE,
+						&data->block_lte,
+						at_command_set_4g_bands,
+						hc_set_property_block_lte_cb,
+						TRUE);
+	}
+
+	return __ofono_error_invalid_args(msg);
 }
 
 static void gemalto_smso_cb(gboolean ok, GAtResult *result, gpointer user_data)
@@ -1671,6 +1859,70 @@ static void sgauth_probe(gboolean ok, GAtResult *result, gpointer user_data)
 		data->auth_syntax = GEMALTO_AUTH_DEFAULTS;
 }
 
+static void scfg_probe(gboolean ok, GAtResult *result, gpointer user_data)
+{
+	struct ofono_modem *modem = user_data;
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	GAtResultIter iter;
+	const char *parameter;
+	const char *range;
+	char *activebandmask;
+
+	g_at_result_iter_init(&iter, result);
+
+	if (ok) {
+		while (g_at_result_iter_next(&iter, "^SCFG:")) {
+
+			if (g_at_result_iter_next_string(&iter,&parameter)) {
+				if (!strcmp(scfg_2g_parameter, parameter)) {
+					if (g_at_result_iter_open_list(&iter)) {
+						if (g_at_result_iter_next_string(&iter, &range)) {
+							activebandmask = strchr(range, '-');
+							if (activebandmask) {
+								memcpy(data->bandmask_2g, activebandmask+1, BANDMASK_LENGTH);
+								DBG("2G band: %s", data->bandmask_2g);
+							}
+						}
+					}
+					g_at_result_iter_close_list(&iter);
+				} else if (!strcmp(scfg_3g_parameter, parameter)) {
+					if (g_at_result_iter_open_list(&iter)) {
+						if (g_at_result_iter_next_string(&iter, &range)) {
+							activebandmask = strchr(range, '-');
+							if (activebandmask) {
+								memcpy(data->bandmask_3g, activebandmask+1, BANDMASK_LENGTH);
+								DBG("3G band: %s", data->bandmask_3g);
+							}
+						}
+					}
+					g_at_result_iter_close_list(&iter);
+				} else if (!strcmp(scfg_4g_parameter, parameter)) {
+					for(int i=0; i<2; ++i) {
+						if (g_at_result_iter_open_list(&iter)) {
+							if (g_at_result_iter_next_string(&iter, &range)) {
+								activebandmask = strchr(range, '-');
+								if (activebandmask) {
+									memcpy(data->bandmask_4g[i], activebandmask+1, BANDMASK_LENGTH);
+									DBG("4G band: %s", data->bandmask_4g[i]);
+								}
+							}
+						}
+						g_at_result_iter_close_list(&iter);
+					}
+				}
+			} else {
+				DBG("no ^SCFG: parameter");
+			}
+		}
+		g_at_chat_send(data->app, at_command_set_2g_bands(false, modem), none_prefix, NULL, NULL, NULL);
+		g_at_chat_send(data->app, at_command_set_3g_bands(false, modem), none_prefix, NULL, NULL, NULL);
+		g_at_chat_send(data->app, at_command_set_4g_bands(false, modem), none_prefix, NULL, NULL, NULL);
+	} else {
+		DBG("not ok");
+	}
+
+}
+
 static void gemalto_set_cfun_cb(gboolean ok, GAtResult *result,
 					gpointer user_data)
 {
@@ -1797,6 +2049,10 @@ static void gemalto_initialize(struct ofono_modem *modem)
 	}
 
 	g_at_chat_send(data->app, "AT^SAIC?", NULL, saic_probe, modem, NULL);
+
+	if (data->model == 0x65) {		/* FIXME: Should be an enum - ALAS5 */
+		g_at_chat_send(data->app, "AT^SCFG=?", NULL, scfg_probe, modem, NULL);
+	}
 
 	gemalto_exec_stored_cmd(modem, "enable");
 
