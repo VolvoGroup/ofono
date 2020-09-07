@@ -1,0 +1,20 @@
+#!/bin/sh
+
+if [ -f config.status ]; then
+	make maintainer-clean
+fi
+
+./bootstrap && \
+    ./configure --enable-maintainer-mode \
+		--enable-debug \
+		--prefix=/usr \
+		--mandir=/usr/share/man \
+		--sysconfdir=/etc \
+		--localstatedir=/var \
+		--enable-mbimmodem \
+		--disable-cdmamodem \
+		--disable-phonesim \
+		--disable-isimodem \
+		--disable-rilmodem \
+		--disable-bluetooth \
+		--disable-datafiles $*
