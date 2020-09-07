@@ -1,2 +1,2 @@
 # ofonoGTO
-this is a fork from ofono to support Gemalto modules and additional features.
+this is a fork from ofonoGTO (https://github.com/GiacintoCifelli/ofonoGTO) to support Volvos needs
