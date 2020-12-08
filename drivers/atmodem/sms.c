@@ -1276,6 +1276,9 @@ static void at_csms_query_cb(gboolean ok, GAtResult *result,
 	if (!ok)
 		return at_sms_not_supported(sms);
 
+	if (data->vendor == OFONO_VENDOR_GEMALTO)
+		goto out;	 /* CNMA is not supported by ALAS5V modem */
+
 	g_at_result_iter_init(&iter, result);
 
 	if (!g_at_result_iter_next(&iter, "+CSMS:"))
