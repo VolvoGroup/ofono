@@ -126,6 +126,7 @@ static const char *sgpsc_prefix[] = { "^SGPSC:", NULL };
 static const char scfg_2g_parameter[] = "Radio/Band/2G";
 static const char scfg_3g_parameter[] = "Radio/Band/3G";
 static const char scfg_4g_parameter[] = "Radio/Band/4G";
+static const char *sind_prefix[] = { "^SIND:", NULL };
 #define BANDMASK_LENGTH 10
 
 typedef char* (*SetFunc)(gboolean enable, struct ofono_modem *modem);
@@ -1775,16 +1776,44 @@ static void gemalto_ciev_nitz_notify(GAtResultIter *iter,
 	sprintf(buf, "AT+CCLK=\"%s\"", nitz_data);
 	g_at_chat_send(data->app, buf, none_prefix, NULL, NULL, NULL);
 
-	gemalto_signal(GEMALTO_NITZ_TIME_INTERFACE, "NitzUpdated", nitz_data,
-									modem);
+	gemalto_signal(GEMALTO_NITZ_TIME_INTERFACE, "NitzUpdated", nitz_data, modem);
+}
+
+static void gemalto_ciev_euicc_notify(GAtResultIter *iter,
+					struct ofono_modem *modem)
+{
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	struct ofono_sim *sim = data->sim;
+	const char *euicc_data;
+
+	if (!g_at_result_iter_next_string(iter, &euicc_data))
+		return;
+
+	DBG("euicc_data  %s", euicc_data);
+
+	ofono_sim_euicc_notify(euicc_data, sim);
+}
+
+static void gemalto_update_indicator_status(const char* ind_str,
+											GAtResultIter *iter,
+											struct ofono_modem *modem)
+{
+	const char *sim_status = "simstatus";
+	const char *nitz_status = "nitz";
+	const char *euicc_status = "euiccid";
+
+	if (g_str_equal(sim_status, ind_str)) {
+		gemalto_ciev_simstatus_notify(iter, modem);
+	} else if (g_str_equal(nitz_status, ind_str)) {
+		gemalto_ciev_nitz_notify(iter, modem);
+	} else if (g_str_equal(euicc_status, ind_str)) {
+		gemalto_ciev_euicc_notify(iter, modem);
+	}
 }
 
 static void gemalto_ciev_notify(GAtResult *result, gpointer user_data)
 {
 	struct ofono_modem *modem = user_data;
-
-	const char *sim_status = "simstatus";
-	const char *nitz_status = "nitz";
 	const char *ind_str;
 	GAtResultIter iter;
 
@@ -1797,11 +1826,31 @@ static void gemalto_ciev_notify(GAtResult *result, gpointer user_data)
 	if (!g_at_result_iter_next_unquoted_string(&iter, &ind_str))
 		return;
 
-	if (g_str_equal(sim_status, ind_str)) {
-		gemalto_ciev_simstatus_notify(&iter, modem);
-	} else if (g_str_equal(nitz_status, ind_str)) {
-		gemalto_ciev_nitz_notify(&iter, modem);
-	}
+	gemalto_update_indicator_status(ind_str, &iter, modem);
+}
+
+static void gemalto_sind_activate_urc_cb(gboolean ok, GAtResult *result, gpointer user_data)
+{
+	struct ofono_modem *modem = user_data;
+	const char *ind_str;
+	GAtResultIter iter;
+
+	if (!ok)
+		return;
+
+	g_at_result_iter_init(&iter, result);
+
+	/* Example: ^SIND: simstatus,1,<status> */
+	if (!g_at_result_iter_next(&iter, "^SIND:"))
+		return;
+
+	if (!g_at_result_iter_next_unquoted_string(&iter, &ind_str))
+		return;
+
+	if (!g_at_result_iter_next_number(&iter, NULL))
+		return;
+
+	gemalto_update_indicator_status(ind_str, &iter, modem);
 }
 
 static void sim_state_cb(gboolean present, gpointer user_data)
@@ -1821,10 +1870,13 @@ static void sim_state_cb(gboolean present, gpointer user_data)
 	g_at_chat_register(data->app, "+PBREADY",
 			gemalto_pbready_notify, FALSE, modem, NULL);
 
-	g_at_chat_send(data->app, "AT^SIND=\"simstatus\",1", none_prefix,
-			NULL, NULL, NULL);
-	g_at_chat_send(data->app, "AT^SIND=\"nitz\",1", none_prefix,
-			NULL, NULL, NULL);
+	/* Enable URC */
+	g_at_chat_send(data->app, "AT^SIND=\"simstatus\",1", sind_prefix,
+			gemalto_sind_activate_urc_cb, modem, NULL);
+	g_at_chat_send(data->app, "AT^SIND=\"nitz\",1", sind_prefix,
+			gemalto_sind_activate_urc_cb, modem, NULL);
+	g_at_chat_send(data->app, "AT^SIND=\"euiccid\",1", sind_prefix,
+			gemalto_sind_activate_urc_cb, modem, NULL);
 }
 
 static void gemalto_exit_urc_notify(GAtResult *result, gpointer user_data)

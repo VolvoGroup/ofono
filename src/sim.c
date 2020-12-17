@@ -69,6 +69,7 @@ struct ofono_sim_aid_session {
 struct ofono_sim {
 	/* Contents of the SIM file system, in rough initialization order */
 	char *iccid;
+	char *euicc;
 
 	char **language_prefs;
 	unsigned char *efli;
@@ -401,6 +402,10 @@ static DBusMessage *sim_get_properties(DBusConnection *conn,
 	if (sim->iccid)
 		ofono_dbus_dict_append(&dict, "CardIdentifier",
 					DBUS_TYPE_STRING, &sim->iccid);
+
+	if (sim->euicc)
+		ofono_dbus_dict_append(&dict, "EmbeddedCardIdentifier",
+					DBUS_TYPE_STRING, &sim->euicc);
 
 	if (sim->imsi)
 		ofono_dbus_dict_append(&dict, "SubscriberIdentity",
@@ -1538,6 +1543,28 @@ static void discover_apps_cb(const struct ofono_error *error,
 	}
 }
 
+void ofono_sim_euicc_notify(const char *euicc, void *data)
+{
+	struct ofono_sim *sim = data;
+	DBusConnection *conn = ofono_dbus_get_connection();
+	const char *path = __ofono_atom_get_path(sim->atom);
+
+	if (sim->euicc && euicc) {
+		if(g_str_equal(sim->euicc, euicc)) {
+			return;
+		}
+	}
+
+	g_free(sim->euicc);
+	sim->euicc = g_strdup(euicc);
+	DBG("new eUICC ID: %s", sim->euicc);
+
+	ofono_dbus_signal_property_changed(conn, path,
+						OFONO_SIM_MANAGER_INTERFACE,
+						"EmbeddedCardIdentifier",
+						DBUS_TYPE_STRING, &sim->euicc);
+}
+
 static void sim_imsi_obtained(struct ofono_sim *sim, const char *imsi)
 {
 	DBusConnection *conn = ofono_dbus_get_connection();
@@ -2183,10 +2210,8 @@ static void sim_iccid_changed(int id, void *userdata)
 {
 	struct ofono_sim *sim = userdata;
 
-	if (sim->iccid) {
-		g_free(sim->iccid);
-		sim->iccid = NULL;
-	}
+	g_free(sim->iccid);
+	sim->iccid = NULL;
 
 	ofono_sim_read(sim->early_context, SIM_EF_ICCID_FILEID,
 			OFONO_SIM_FILE_STRUCTURE_TRANSPARENT,
@@ -2466,10 +2491,11 @@ static void sim_inserted_update(struct ofono_sim *sim)
 
 static void sim_free_early_state(struct ofono_sim *sim)
 {
-	if (sim->iccid) {
-		g_free(sim->iccid);
-		sim->iccid = NULL;
-	}
+	g_free(sim->iccid);
+	sim->iccid = NULL;
+
+	g_free(sim->euicc);
+	sim->euicc = NULL;
 
 	if (sim->efli) {
 		g_free(sim->efli);

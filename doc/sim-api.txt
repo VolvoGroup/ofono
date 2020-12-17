@@ -175,6 +175,9 @@ Properties	boolean Present [readonly]
 			Contains the Integrated Circuit Card Identifer (ICCID)
 			which is read directly from the SIM.
 
+		string EmbeddedCardIdentifier [readonly]
+			Contains the Embedded Integrated Circuit Card Identifer (EUICCID)
+
 		boolean FixedDialing [readonly]
 
 			True if Fixed Dialing service is enabled in SIM card.

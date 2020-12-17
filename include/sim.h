@@ -262,6 +262,8 @@ void ofono_sim_inserted_notify(struct ofono_sim *sim, ofono_bool_t inserted);
  */
 void ofono_sim_initialized_notify(struct ofono_sim *sim);
 
+void ofono_sim_euicc_notify(const char *euicc, void *data);
+
 struct ofono_sim_context *ofono_sim_context_create(struct ofono_sim *sim);
 
 struct ofono_sim_context *ofono_sim_context_create_isim(
