@@ -1577,6 +1577,28 @@ static DBusMessage *manager_dial(DBusConnection *conn,
 	return __ofono_error_failed(msg);
 }
 
+static int voicecall_ecall(struct ofono_voicecall *vc, const char *number,
+          ofono_voicecall_cb_t cb, void *data)
+{
+  struct ofono_modem *modem = __ofono_atom_get_modem(vc->atom);
+  struct ofono_phone_number ph;
+
+  if (vc->driver->ecall == NULL)
+    return -ENOTSUP;
+
+  string_to_phone_number(number, &ph);
+
+//  if (vc->settings) {
+//    g_key_file_set_string(vc->settings, SETTINGS_GROUP,
+//          "Number", number);
+//    storage_sync(vc->imsi, SETTINGS_STORE, vc->settings);
+//  }
+
+  vc->driver->ecall(vc, &ph, cb, vc);
+
+  return 0;
+}
+
 static void manager_dial_hfp_callback(const struct ofono_error *error,
 								void *data)
 {
@@ -1641,6 +1663,46 @@ static int voicecall_dial_hfp(struct ofono_voicecall *vc, unsigned int position,
        }
 
 	return 0;
+}
+
+static DBusMessage *manager_ecall(DBusConnection *conn,
+          DBusMessage *msg, void *data)
+{
+  struct ofono_voicecall *vc = data;
+  const char *number;
+  const char *clirstr;
+  enum ofono_clir_option clir;
+  int err;
+
+  if (vc->pending || vc->dial_req || vc->pending_em)
+    return __ofono_error_busy(msg);
+
+  if (dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &number,
+          DBUS_TYPE_INVALID) == FALSE)
+    return __ofono_error_invalid_args(msg);
+
+  vc->pending = dbus_message_ref(msg);
+
+  err = voicecall_ecall(vc, number, manager_dial_callback, vc);
+
+  if (err >= 0)
+    return NULL;
+
+  vc->pending = NULL;
+  dbus_message_unref(msg);
+
+  switch (err) {
+  case -EINVAL:
+    return __ofono_error_invalid_format(msg);
+
+  case -ENETDOWN:
+    return __ofono_error_not_available(msg);
+
+  case -ENOTSUP:
+    return __ofono_error_not_implemented(msg);
+  }
+
+  return __ofono_error_failed(msg);
 }
 
 static DBusMessage *manager_dial_last(DBusConnection *conn,
@@ -2270,6 +2332,10 @@ static const GDBusMethodTable manager_methods[] = {
 		GDBUS_ARGS({ "number", "s" }, { "hide_callerid", "s" }),
 		GDBUS_ARGS({ "path", "o" }),
 		manager_dial) },
+	{ GDBUS_ASYNC_METHOD("ECall",
+	  GDBUS_ARGS({ "number", "s" }),
+	  GDBUS_ARGS({ "path", "o" }),
+	  manager_ecall) },
 	{ GDBUS_ASYNC_METHOD("DialLast", NULL, NULL, manager_dial_last)},
 	{ GDBUS_ASYNC_METHOD("DialMemory",
 		GDBUS_ARGS({"memory_location", "u" }), NULL,

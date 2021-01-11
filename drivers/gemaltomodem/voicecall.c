@@ -304,6 +304,24 @@ static void gemalto_dial(struct ofono_voicecall *vc,
 	gemalto_call_common(buf, vc, generic_cb, 0, cb, data);
 }
 
+static void gemalto_ecall(struct ofono_voicecall *vc,
+        const struct ofono_phone_number *ph,
+        ofono_voicecall_cb_t cb, void *data)
+{
+  struct cb_data *cbd = cb_data_new(cb, data);
+  char buf[256];
+  size_t len;
+
+  cbd->user = vc;
+
+  if (strlen(ph->number))
+    len = snprintf(buf, sizeof(buf), "AT+CECALL=0,%s", ph->number);
+  else
+    len = snprintf(buf, sizeof(buf), "AT+CECALL=1");
+
+  gemalto_call_common(buf, vc, generic_cb, 0, cb, data);
+}
+
 static void gemalto_parse_slcc(GAtResult *result, GSList **l,
 				ofono_bool_t *ret_mpty, gboolean *last)
 {
@@ -555,6 +573,7 @@ static const struct ofono_voicecall_driver driver = {
 	.probe			= gemalto_voicecall_probe,
 	.remove			= gemalto_voicecall_remove,
 	.dial			= gemalto_dial,
+	.ecall		= gemalto_ecall,
 	.answer			= gemalto_answer,
 	.hangup_all		= gemalto_hangup_all,
 	.hangup_active		= gemalto_hangup,
