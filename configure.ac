@@ -1,5 +1,5 @@
 AC_PREREQ(2.60)
-AC_INIT(ofono, 201217)
+AC_INIT(ofono, 210112)
 
 AM_INIT_AUTOMAKE([foreign subdir-objects color-tests])
 AC_CONFIG_HEADERS(config.h)

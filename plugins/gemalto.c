@@ -1130,6 +1130,7 @@ static void gemalto_gnss_disable(struct ofono_modem *modem)
 #define HARDWARE_CONTROL_PROPERTY_BLOCK_2G "Block2G"
 #define HARDWARE_CONTROL_PROPERTY_BLOCK_3G "Block3G"
 #define HARDWARE_CONTROL_PROPERTY_BLOCK_LTE "BlockLTE"
+#define HARDWARE_CONTROL_PROPERTY_EXITCAUSE "Exitcause"
 
 static DBusMessage *hc_get_properties(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
@@ -1139,6 +1140,7 @@ static DBusMessage *hc_get_properties(DBusConnection *conn,
 	DBusMessage *reply;
 	DBusMessageIter dbusiter;
 	DBusMessageIter dict;
+	const char *empty_string = "";
 
 	reply = dbus_message_new_method_return(msg);
 	dbus_message_iter_init_append(reply, &dbusiter);
@@ -1160,6 +1162,9 @@ static DBusMessage *hc_get_properties(DBusConnection *conn,
 								DBUS_TYPE_BOOLEAN,
 								&data->block_lte);
 	}
+	ofono_dbus_dict_append(&dict, HARDWARE_CONTROL_PROPERTY_EXITCAUSE,
+							DBUS_TYPE_STRING,
+							&empty_string);		/* Always empty at restart */
 	dbus_message_iter_close_container(&dbusiter, &dict);
 
 	return reply;
@@ -1887,6 +1892,14 @@ static void gemalto_exit_urc_notify(GAtResult *result, gpointer user_data)
 	g_at_result_iter_init(&iter, result);
 	g_at_result_iter_next(&iter, "^EXIT:");
 	g_at_result_iter_next_unquoted_string(&iter, &error_message);
+
+	ofono_dbus_signal_property_changed(
+			ofono_dbus_get_connection(),
+			ofono_modem_get_path(user_data),
+			HARDWARE_CONTROL_INTERFACE,
+			HARDWARE_CONTROL_PROPERTY_EXITCAUSE,
+			DBUS_TYPE_STRING, &error_message);
+
 	ofono_error("Modem exited! Cause: %s", error_message);
 }
 
