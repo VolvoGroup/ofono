@@ -174,6 +174,46 @@ static const char *disconnect_reason_to_string(enum ofono_disconnect_reason r)
 	}
 }
 
+static const char *ecall_status_to_string(enum ofono_ecall_status s)
+{
+	switch (s) {
+	case OFONO_ECALL_NO_ERROR:
+		return "NoError";
+	case OFONO_ECALL_ACK_TIMEOUT:
+		return "AckTimeoutExpired";
+	case OFONO_ECALL_START_TIMEOUT:
+		return "StartTimeoutExpired";
+	case OFONO_ECALL_SESSION_TIMEOUT:
+		return "SessionTimeoutExpired";
+	case OFONO_ECALL_INACTIVE:
+		return "Inactive";
+	case OFONO_ECALL_CALLBACK_TIMEOUT:
+		return "CallbackTimeoutExpired";
+	case OFONO_ECALL_MSD_REJECT:
+		return "MSDReject";
+	case OFONO_ECALL_MSD_UPDATE_PERIOD_START:
+		return "MSDUpdatePeriodStart";
+	case OFONO_ECALL_MSD_UPDATE_PERIOD_END:
+		return "MSDUpdatePeriodEnd";
+	default:
+		return "Unknown";
+	}
+}
+
+static const char *vocoder_status_to_string(enum ofono_vocoder_status s)
+{
+	switch (s) {
+	case OFONO_VOCODER_OFF_VOICE_ON:
+		return "VocoderOffVoiceOn";
+	case OFONO_VOCODER_ON_VOICE_ON:
+		return "VocoderOnVoiceOn";
+	case OFONO_VOCODER_ON_VOICE_OFF:
+		return "VocoderOnVoiceOff";
+	default:
+		return "Unknown";
+	}
+}
+
 static const char *phone_and_clip_to_string(const struct ofono_phone_number *n,
 						int clip_validity)
 {
@@ -1588,12 +1628,6 @@ static int voicecall_ecall(struct ofono_voicecall *vc, const char *number,
 
   string_to_phone_number(number, &ph);
 
-//  if (vc->settings) {
-//    g_key_file_set_string(vc->settings, SETTINGS_GROUP,
-//          "Number", number);
-//    storage_sync(vc->imsi, SETTINGS_STORE, vc->settings);
-//  }
-
   vc->driver->ecall(vc, &ph, cb, vc);
 
   return 0;
@@ -1670,8 +1704,6 @@ static DBusMessage *manager_ecall(DBusConnection *conn,
 {
   struct ofono_voicecall *vc = data;
   const char *number;
-  const char *clirstr;
-  enum ofono_clir_option clir;
   int err;
 
   if (vc->pending || vc->dial_req || vc->pending_em)
@@ -2370,6 +2402,8 @@ static const GDBusMethodTable manager_methods[] = {
 static const GDBusSignalTable manager_signals[] = {
 	{ GDBUS_SIGNAL("Forwarded", GDBUS_ARGS({ "type", "s" })) },
 	{ GDBUS_SIGNAL("BarringActive", GDBUS_ARGS({ "type", "s" })) },
+	{ GDBUS_SIGNAL("ECallStatus", GDBUS_ARGS({ "type", "s" })) },
+	{ GDBUS_SIGNAL("VocoderStatus", GDBUS_ARGS({ "type", "s" })) },
 	{ GDBUS_SIGNAL("PropertyChanged",
 			GDBUS_ARGS({ "name", "s" }, { "value", "v" })) },
 	{ GDBUS_SIGNAL("CallAdded",
@@ -4280,4 +4314,34 @@ void ofono_voicecall_ssn_mo_notify(struct ofono_voicecall *vc,
 		ssn_mo_forwarded_notify(vc, id, code);
 		break;
 	}
+}
+
+void ofono_voicecall_ecall_status_notify(struct ofono_modem *modem,
+					enum ofono_ecall_status status)
+{
+	DBusConnection *conn = ofono_dbus_get_connection();
+	const char *path = ofono_modem_get_path(modem);
+	const char *status_str = ecall_status_to_string(status);
+
+	DBG("ECall status: %s", status_str);
+
+	g_dbus_emit_signal(conn, path, OFONO_VOICECALL_MANAGER_INTERFACE,
+				"ECallStatus",
+				DBUS_TYPE_STRING, &status_str,
+				DBUS_TYPE_INVALID);
+}
+
+void ofono_voicecall_vocoder_status_notify(struct ofono_modem *modem,
+					enum ofono_vocoder_status status)
+{
+	DBusConnection *conn = ofono_dbus_get_connection();
+	const char *path = ofono_modem_get_path(modem);
+	const char *status_str = vocoder_status_to_string(status);
+
+	DBG("ECall vocoder status: %s", status_str);
+
+	g_dbus_emit_signal(conn, path, OFONO_VOICECALL_MANAGER_INTERFACE,
+				"VocoderStatus",
+				DBUS_TYPE_STRING, &status_str,
+				DBUS_TYPE_INVALID);
 }

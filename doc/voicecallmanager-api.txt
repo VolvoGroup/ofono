@@ -59,6 +59,21 @@ Methods		dict GetProperties()
 					 [service].Error.NotImplemented
 					 [service].Error.Failed
 
+		Object ECall(string number)
+    
+			Initiates an ecall. Returns the object path to the newly 
+			created call
+    
+			NOTE: If an active call (single or multi-party) exists,
+			then it is automatically put on hold if the ECall 
+			procedure is successful.
+
+			Possible Errors: [service].Error.InProgress
+					[service].Error.InvalidArguments
+					[service].Error.InvalidFormat
+					[service].Error.NotImplemented
+					[service].Error.Failed
+
 		object DialLast()
 
 			Initiates a new outgoing call to the last dialled number.
@@ -270,6 +285,14 @@ Signals		CallAdded(object path, dict properties)
 			is a redirected call due to a call forwarding operation.
 			In this case the type parameter in the signal is set to
 			"incoming".
+
+		ECallStatus(string type) [experimental]
+			Signal emitted when an ecall is made and indicates the 
+			current status of the ecall.
+
+		VocoderStatus(string type) [experimental]
+			Signal emitted when an ecall is made and indicates the 
+			current status of the vocoder.
 
 Properties	array{string} EmergencyNumbers [readonly]
 

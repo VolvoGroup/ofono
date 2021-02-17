@@ -28,6 +28,24 @@ extern "C" {
 
 #include <ofono/types.h>
 
+enum ofono_ecall_status {
+	OFONO_ECALL_NO_ERROR = 0,
+	OFONO_ECALL_ACK_TIMEOUT = 1,
+	OFONO_ECALL_START_TIMEOUT = 2,
+	OFONO_ECALL_SESSION_TIMEOUT = 3,
+	OFONO_ECALL_INACTIVE = 5,
+	OFONO_ECALL_CALLBACK_TIMEOUT = 6,
+	OFONO_ECALL_MSD_REJECT = 7,
+	OFONO_ECALL_MSD_UPDATE_PERIOD_START = 10,
+	OFONO_ECALL_MSD_UPDATE_PERIOD_END = 11
+};
+
+enum ofono_vocoder_status {
+	OFONO_VOCODER_OFF_VOICE_ON = 0,
+	OFONO_VOCODER_ON_VOICE_ON = 1,
+	OFONO_VOCODER_ON_VOICE_OFF = 2
+};
+
 struct ofono_modem;
 struct ofono_voicecall;
 
@@ -59,24 +77,23 @@ struct ofono_voicecall_driver {
 	 */
 	void (*dial)(struct ofono_voicecall *vc,
 			const struct ofono_phone_number *number,
-			enum ofono_clir_option clir, ofono_voicecall_cb_t cb,
-			void *data);
-  void (*ecall)(struct ofono_voicecall *vc,
-      const struct ofono_phone_number *number,
-      ofono_voicecall_cb_t cb,
-      void *data);
+			enum ofono_clir_option clir,
+			ofono_voicecall_cb_t cb, void *data);
+	void (*ecall)(struct ofono_voicecall *vc,
+			const struct ofono_phone_number *number,
+			ofono_voicecall_cb_t cb, void *data);
 	/* dials a number at a given memory location */
 	void (*dial_memory)(struct ofono_voicecall *vc,
-			unsigned int memory_location, ofono_voicecall_cb_t cb,
-			void *data);
+			unsigned int memory_location,
+			ofono_voicecall_cb_t cb, void *data);
 	/* Dials the last number again, this handles the hfp profile last number
-         * dialing with the +BLDN AT command
-         */
-	void (*dial_last)(struct ofono_voicecall *vc, ofono_voicecall_cb_t cb, void *data);
+	 * dialing with the +BLDN AT command
+	 */
+	void (*dial_last)(struct ofono_voicecall *vc,
+			ofono_voicecall_cb_t cb, void *data);
 	/* Answers an incoming call, this usually corresponds to ATA */
 	void (*answer)(struct ofono_voicecall *vc,
 			ofono_voicecall_cb_t cb, void *data);
-
 	/* Hangs up active, dialing, alerting or incoming calls */
 	void (*hangup_active)(struct ofono_voicecall *vc,
 			ofono_voicecall_cb_t cb, void *data);
@@ -185,6 +202,10 @@ void ofono_voicecall_ssn_mo_notify(struct ofono_voicecall *vc, unsigned int id,
 void ofono_voicecall_ssn_mt_notify(struct ofono_voicecall *vc, unsigned int id,
 					int code, int index,
 					const struct ofono_phone_number *ph);
+void ofono_voicecall_ecall_status_notify(struct ofono_modem *modem,
+					enum ofono_ecall_status status);
+void ofono_voicecall_vocoder_status_notify(struct ofono_modem *modem,
+					enum ofono_vocoder_status status);
 
 #ifdef __cplusplus
 }

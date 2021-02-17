@@ -1799,6 +1799,35 @@ static void gemalto_ciev_euicc_notify(GAtResultIter *iter,
 	ofono_sim_euicc_notify(euicc_data, sim);
 }
 
+static void gemalto_ciev_ecaller_notify(GAtResultIter *iter,
+					struct ofono_modem *modem)
+{
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	struct ofono_sim *sim = data->sim;
+	int ecaller_status;
+
+	if (!g_at_result_iter_next_number(iter, &ecaller_status))
+		return;
+
+	DBG("ecaller_status  %d", ecaller_status);
+
+	ofono_voicecall_ecall_status_notify(modem, ecaller_status);
+}
+
+static void gemalto_ciev_ecallco_notify(GAtResultIter *iter,
+					struct ofono_modem *modem)
+{
+	struct gemalto_data *data = ofono_modem_get_data(modem);
+	int ecallco_status;
+
+	if (!g_at_result_iter_next_number(iter, &ecallco_status))
+		return;
+
+	DBG("ecallco_status  %d", ecallco_status);
+
+	ofono_voicecall_vocoder_status_notify(modem, ecallco_status);
+}
+
 static void gemalto_update_indicator_status(const char* ind_str,
 											GAtResultIter *iter,
 											struct ofono_modem *modem)
@@ -1806,6 +1835,8 @@ static void gemalto_update_indicator_status(const char* ind_str,
 	const char *sim_status = "simstatus";
 	const char *nitz_status = "nitz";
 	const char *euicc_status = "euiccid";
+	const char *ecaller_status = "ecaller";
+	const char *ecallco_status = "ecallco";
 
 	if (g_str_equal(sim_status, ind_str)) {
 		gemalto_ciev_simstatus_notify(iter, modem);
@@ -1813,6 +1844,10 @@ static void gemalto_update_indicator_status(const char* ind_str,
 		gemalto_ciev_nitz_notify(iter, modem);
 	} else if (g_str_equal(euicc_status, ind_str)) {
 		gemalto_ciev_euicc_notify(iter, modem);
+	} else if (g_str_equal(ecaller_status, ind_str)) {
+		gemalto_ciev_ecaller_notify(iter, modem);
+	} else if (g_str_equal(ecallco_status, ind_str)) {
+		gemalto_ciev_ecallco_notify(iter, modem);
 	}
 }
 
@@ -1881,6 +1916,12 @@ static void sim_state_cb(gboolean present, gpointer user_data)
 	g_at_chat_send(data->app, "AT^SIND=\"nitz\",1", sind_prefix,
 			gemalto_sind_activate_urc_cb, modem, NULL);
 	g_at_chat_send(data->app, "AT^SIND=\"euiccid\",1", sind_prefix,
+			gemalto_sind_activate_urc_cb, modem, NULL);
+	g_at_chat_send(data->app, "AT^SIND=\"ecaller\",1", sind_prefix,
+			gemalto_sind_activate_urc_cb, modem, NULL);
+	g_at_chat_send(data->app, "AT^SIND=\"ecallco\",1", sind_prefix,
+			gemalto_sind_activate_urc_cb, modem, NULL);
+	g_at_chat_send(data->app, "AT^SIND=\"ecallda\",1", sind_prefix,
 			gemalto_sind_activate_urc_cb, modem, NULL);
 }
 
