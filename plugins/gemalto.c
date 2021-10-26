@@ -117,6 +117,8 @@ enum gprs_option {
 	USE_CTX_INV = 6,	/* inverted syntax idx,act */
 };
 
+#define PDP_CONTEXT_START_ID 6
+
 static const char *none_prefix[] = { NULL };
 static const char *cfun_prefix[] = { "+CFUN:", NULL };
 static const char *sctm_prefix[] = { "^SCTM:", NULL };
@@ -3096,7 +3098,7 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 	GAtResultIter iter;
 	struct ofono_message_waiting *mw;
 	struct ofono_gprs *gprs = NULL;
-	struct ofono_gprs_context *gc = NULL;
+	struct ofono_gprs_context *gc = {NULL};
 
 	data->autoattach = FALSE;
 	ofono_modem_set_integer(modem, "GemaltoAutoAttach", 0);
@@ -3118,12 +3120,24 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 		gprs = ofono_gprs_create(modem, OFONO_VENDOR_GEMALTO, "atmodem",
 								data->app);
 		ofono_gprs_set_cid_range(gprs, 0, data->max_sessions);
+		DBG("CID range: 0, %u", data->max_sessions);
 		if (data->model == 0x65) {
 			struct gemalto_mbim_composite comp;
 			comp.device = data->mbimd;
 			comp.chat = data->app;
-			comp.at_cid = 6;
-			gc = ofono_gprs_context_create(modem, 0, "gemaltomodemmbim", &comp);
+			comp.at_cid = PDP_CONTEXT_START_ID;
+			for (unsigned u = data->max_sessions; u--; ) {
+				gc = ofono_gprs_context_create(modem, 0, "gemaltomodemmbim", &comp);
+				if (gc) {
+					ofono_gprs_context_set_type(gc,
+							OFONO_GPRS_CONTEXT_TYPE_INTERNET);
+					if (gprs) {
+						ofono_gprs_add_context(gprs, gc);
+					}
+				}
+				++comp.at_cid;
+			}
+			gc = NULL;		/* Mark that contexts have been added */
 		} else /* model == 0x5d, 0x62 (standard mbim driver) */
 			gc = ofono_gprs_context_create(modem, 0, "mbim", data->mbimd);
 	} else if (data->qmi == STATE_PRESENT) {
@@ -3171,12 +3185,13 @@ static void autoattach_probe_and_continue(gboolean ok, GAtResult *result,
 	   * nevertheless other services (voice, gpio, gnss) could be available
 	   */
 
-	if (gc)
+	if (gc) {
 		ofono_gprs_context_set_type(gc,
-					OFONO_GPRS_CONTEXT_TYPE_INTERNET);
-
-	if (gprs && gc)
-		ofono_gprs_add_context(gprs, gc);
+				OFONO_GPRS_CONTEXT_TYPE_INTERNET);
+		if (gprs) {
+			ofono_gprs_add_context(gprs, gc);
+		}
+	}
 
 	/* might have also without voicecall support  */
 	ofono_ussd_create(modem, 0, "atmodem", data->app);

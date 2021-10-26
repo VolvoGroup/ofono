@@ -849,7 +849,7 @@ static void pri_activate_callback(const struct ofono_error *error, void *data)
 	struct ofono_gprs_context *gc = ctx->context_driver;
 	const dbus_bool_t value = TRUE;
 
-	DBG("%p", ctx);
+	DBG("%s - %p:%s, id=%u", ctx->path, ctx, ctx->key, ctx->id);
 
 	if (error->type != OFONO_ERROR_TYPE_NO_ERROR) {
 		DBG("Activating context failed with error: %s",
