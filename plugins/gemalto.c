@@ -344,6 +344,7 @@ static bool executeWithPrompt(GAtChat *port, const char *command,
 struct gemalto_storedcmd_dataset {
 	struct ofono_modem *modem;
 	const char *filename;
+	char * modemtype;
 	char *command;
 	char *prompt;
 	char *argument;
@@ -359,6 +360,7 @@ struct gemalto_storedcmd_dataset {
 static void gemalto_stored_checknset(struct gemalto_storedcmd_dataset *dataset);
 
 static void cleandataset(struct gemalto_storedcmd_dataset *dataset) {
+	free(dataset->modemtype);
 	free(dataset->check);
 	free(dataset->expect);
 	free(dataset->command);
@@ -486,7 +488,7 @@ static void gemalto_stored_checknset(struct gemalto_storedcmd_dataset *dataset) 
 	const char *vid = gemalto_get_string(dataset->modem, "Vendor");
 	const char *pid = gemalto_get_string(dataset->modem, "Model");
 	char store[64];
-	char *command, *prompt, *argument, *check, *expect, *reboot, *errorreport;
+	char *modemtype, *command, *prompt, *argument, *check, *expect, *reboot, *errorreport;
 	char key[32];
 	GKeyFile *f;
 
@@ -495,6 +497,15 @@ static void gemalto_stored_checknset(struct gemalto_storedcmd_dataset *dataset) 
 
 	if (!f || dataset->finished)
 		goto cleanup;
+
+	sprintf(key, "modemtype_%d", dataset->index);
+	modemtype = g_key_file_get_string(f, "CheckNSet", key, NULL);
+
+	if (modemtype && !(str_equal0(modemtype, "all") || str_equal0(modemtype, data->modelstr))) {
+	  DBG(REDCOLOR"Modem model doesn't match. expected: %s, current: %s"NOCOLOR, modemtype, data->modelstr);
+	  free(modemtype);
+	  goto cleanup;
+	}
 
 	sprintf(key, "check_%d", dataset->index);
 	check = g_key_file_get_string(f, "CheckNSet", key, NULL);
@@ -2346,6 +2357,7 @@ static void gemalto_set_cfun(GAtChat *app, int mode, struct ofono_modem *modem)
 	g_at_chat_send(app, "AT+CFUN?", cfun_prefix, gemalto_cfun_query, modem, NULL);
 }
 
+static void store_cgmm(gboolean ok, GAtResult *result, gpointer user_data);
 static void gemalto_initialize(struct ofono_modem *modem)
 {
 	struct gemalto_data *data = ofono_modem_get_data(modem);
@@ -2418,6 +2430,8 @@ static void gemalto_initialize(struct ofono_modem *modem)
 
 	if (data->model == 0x65) {		/* FIXME: Should be an enum - ALAS5 */
 		g_at_chat_send(data->app, "AT^SCFG=?", NULL, scfg_probe, modem, NULL);
+		//Get the modem model string
+		g_at_chat_send(data->app, "AT+CGMM", NULL, store_cgmm, modem, NULL);
 	}
 
 	gemalto_exec_stored_cmd(modem, "enable");
@@ -2978,12 +2992,10 @@ static void store_cgmm(gboolean ok, GAtResult *result, gpointer user_data)
 	struct ofono_modem *modem = user_data;
 	struct gemalto_data *data = ofono_modem_get_data(modem);
 	GAtResultIter iter;
+	struct ofono_error error;
 	char const *model;
-	char buf[16];
 
-	/* if no model, fallback to a basic 2G one */
-	data->model = 0x47;
-	strncpy(data->modelstr, "", sizeof(data->modelstr));
+	decode_at_error(&error, g_at_result_final_response(result));
 
 	if (!ok)
 		return;
@@ -2996,53 +3008,9 @@ static void store_cgmm(gboolean ok, GAtResult *result, gpointer user_data)
 
 		if (model && *model) {
 			strncpy(data->modelstr, model, sizeof(data->modelstr));
-
-			if (g_ascii_strncasecmp(model, "TC", 2) == 0)
-				data->model = 0x47;
-			else if (g_ascii_strncasecmp(model, "MC", 2) == 0)
-				data->model = 0x47;
-			else if (g_ascii_strncasecmp(model, "AC", 2) == 0)
-				data->model = 0x47;
-			else if (g_ascii_strncasecmp(model, "HC", 2) == 0)
-				data->model = 0x47;
-			else if (g_ascii_strncasecmp(model, "HM", 2) == 0)
-				data->model = 0x47;
-			else if (g_ascii_strncasecmp(model, "XT", 2) == 0)
-				data->model = 0x47;
-			else if (g_ascii_strncasecmp(model, "AGS", 3) == 0)
-				data->model = 0x47;
-			else if (g_ascii_strncasecmp(model, "BGS", 3) == 0)
-				data->model = 0x47;
-			else if (g_ascii_strncasecmp(model, "AH3", 3) == 0)
-				data->model = 0x55;
-			else if (g_ascii_strncasecmp(model, "AHS", 3) == 0)
-				data->model = 0x55;
-			else if (g_ascii_strncasecmp(model, "PHS", 3) == 0)
-				data->model = 0x55;
-			else if (g_ascii_strncasecmp(model, "PH8", 3) == 0)
-				data->model = 0x55;
-			else if (g_ascii_strncasecmp(model, "AHS", 3) == 0)
-				data->model = 0x55;
-			else if (g_ascii_strncasecmp(model, "EHS", 3) == 0)
-				data->model = 0x58;
-			else if (g_ascii_strncasecmp(model, "ELS31-", 6) == 0)
-				data->model = 0xa0;
-			else if (g_ascii_strncasecmp(model, "ELS61-", 6) == 0)
-				data->model = 0x5b;
-			else if (g_ascii_strncasecmp(model, "PLS62-", 6) == 0)
-				data->model = 0x5b;
-			else if (g_ascii_strncasecmp(model, "PLS8-", 5) == 0)
-				data->model = 0x61;
-			else if (g_ascii_strncasecmp(model, "ALS3-", 5) == 0)
-				data->model = 0x61;
-			else if (g_ascii_strncasecmp(model, "ALAS5-", 6) == 0)
-				data->model = 0x65;
-			return;
+			break;
 		}
 	}
-
-	sprintf(buf, "%04x", data->model);
-	ofono_modem_set_string(modem, "Model", buf);
 }
 
 static void store_sqport(gboolean ok, GAtResult *result, gpointer user_data)
