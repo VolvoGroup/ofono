@@ -2738,6 +2738,8 @@ void ofono_sim_inserted_notify(struct ofono_sim *sim, ofono_bool_t inserted)
 		sim->state = OFONO_SIM_STATE_INSERTED;
 	else if (inserted == FALSE && sim->state != OFONO_SIM_STATE_NOT_PRESENT)
 		sim->state = OFONO_SIM_STATE_NOT_PRESENT;
+	else if (sim->state == OFONO_SIM_STATE_UNKNOWN)
+		sim->state = inserted?OFONO_SIM_STATE_INSERTED:OFONO_SIM_STATE_NOT_PRESENT;
 	else
 		return;
 
