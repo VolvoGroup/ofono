@@ -501,11 +501,15 @@ static void gemalto_stored_checknset(struct gemalto_storedcmd_dataset *dataset) 
 	sprintf(key, "modemtype_%d", dataset->index);
 	modemtype = g_key_file_get_string(f, "CheckNSet", key, NULL);
 
-	if (modemtype && !(str_equal0(modemtype, "all") || str_equal0(modemtype, data->modelstr))) {
-	  DBG(REDCOLOR"Modem model doesn't match. expected: %s, current: %s"NOCOLOR, modemtype, data->modelstr);
-	  free(modemtype);
-	  goto cleanup;
+	while (modemtype && !(str_equal0(modemtype, "all") || str_equal0(modemtype, data->modelstr))) {
+		DBG(REDCOLOR"Modem model doesn't match. expected: %s, current: %s"NOCOLOR, modemtype, data->modelstr);
+		dataset->index++;
+		sprintf(key, "modemtype_%d", dataset->index);
+		free(modemtype);
+		modemtype = g_key_file_get_string(f, "CheckNSet", key, NULL);
 	}
+
+	free(modemtype);
 
 	sprintf(key, "check_%d", dataset->index);
 	check = g_key_file_get_string(f, "CheckNSet", key, NULL);
@@ -526,7 +530,7 @@ static void gemalto_stored_checknset(struct gemalto_storedcmd_dataset *dataset) 
 	errorreport = g_key_file_get_string(f, "CheckNSet", key, NULL);
 
 	if (check && expect && command) {
-		DBG(REDCOLOR"executing check command with prompt: %s"NOCOLOR, check);
+		DBG(REDCOLOR"Will execute check command%s: %s"NOCOLOR, prompt?" with prompt":"", check);
 		cleandataset(dataset);
 		dataset->check = check;
 		dataset->expect = expect;
@@ -2358,6 +2362,14 @@ static void gemalto_set_cfun(GAtChat *app, int mode, struct ofono_modem *modem)
 }
 
 static void store_cgmm(gboolean ok, GAtResult *result, gpointer user_data);
+
+static void exec_enable_file(gboolean ok, GAtResult *result, gpointer user_data)
+{
+	struct ofono_modem *modem = user_data;
+
+	gemalto_exec_stored_cmd(modem, "enable");
+}
+
 static void gemalto_initialize(struct ofono_modem *modem)
 {
 	struct gemalto_data *data = ofono_modem_get_data(modem);
@@ -2434,7 +2446,7 @@ static void gemalto_initialize(struct ofono_modem *modem)
 		g_at_chat_send(data->app, "AT+CGMM", NULL, store_cgmm, modem, NULL);
 	}
 
-	gemalto_exec_stored_cmd(modem, "enable");
+	g_at_chat_send(data->app, "AT", NULL, exec_enable_file, modem, NULL);
 
 	gemalto_command_passthrough_enable(modem);
 	gemalto_hardware_monitor_enable(modem);
