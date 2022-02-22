@@ -135,7 +135,7 @@ static const char scfg_2g_parameter[] = "Radio/Band/2G";
 static const char scfg_3g_parameter[] = "Radio/Band/3G";
 static const char scfg_4g_parameter[] = "Radio/Band/4G";
 static const char *sind_prefix[] = { "^SIND:", NULL };
-#define BANDMASK_LENGTH 10
+#define BANDMASK_LENGTH 18
 
 typedef char* (*SetFunc)(gboolean enable, struct ofono_modem *modem);
 
