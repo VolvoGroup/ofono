@@ -1568,7 +1568,7 @@ static char* at_command_set_2g_bands(
 		struct ofono_modem *modem)
 {
 	struct gemalto_data *data = ofono_modem_get_data(modem);
-	static char at_command[50];
+	static char at_command[sizeof("AT^SCFG=") + sizeof(scfg_2g_parameter) + 1*(sizeof(",\"") + BANDMASK_LENGTH + sizeof("\"")) + 2];
 
 	snprintf(at_command, sizeof at_command, "AT^SCFG=\"%s\",\"%s\"",
 					scfg_2g_parameter,
@@ -1582,7 +1582,7 @@ static char* at_command_set_3g_bands(
 		struct ofono_modem *modem)
 {
 	struct gemalto_data *data = ofono_modem_get_data(modem);
-	static char at_command[50];
+	static char at_command[sizeof("AT^SCFG=") + sizeof(scfg_3g_parameter) + 1*(sizeof(",\"") + BANDMASK_LENGTH + sizeof("\"")) + 2];
 
 	snprintf(at_command, sizeof at_command, "AT^SCFG=\"%s\",\"%s\"",
 					scfg_3g_parameter,
@@ -1596,7 +1596,7 @@ static char* at_command_set_4g_bands(
 		struct ofono_modem *modem)
 {
 	struct gemalto_data *data = ofono_modem_get_data(modem);
-	static char at_command[50];
+	static char at_command[sizeof("AT^SCFG=") + sizeof(scfg_4g_parameter) + 2*(sizeof(",\"") + BANDMASK_LENGTH + sizeof("\"")) + 2];
 
 	snprintf(at_command, sizeof at_command, "AT^SCFG=\"%s\",\"%s\",\"%s\"",
 					scfg_4g_parameter,
