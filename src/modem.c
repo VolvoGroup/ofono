@@ -245,6 +245,11 @@ void *__ofono_atom_get_data(struct ofono_atom *atom)
 	return atom->data;
 }
 
+void __ofono_atom_reset_data(struct ofono_atom *atom)
+{
+	atom->data = NULL;
+}
+
 const char *__ofono_atom_get_path(struct ofono_atom *atom)
 {
 	return atom->modem->path;

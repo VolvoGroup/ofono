@@ -949,25 +949,25 @@ static void gemalto_ciev_notify(GAtResult *result, gpointer user_data)
 
 	if (g_str_equal("ceer", ind_str)) {
 
-	  if (!g_at_result_iter_skip_next(&iter))
-	    return;
+		if (!g_at_result_iter_skip_next(&iter))
+			return;
 
-	  if (!g_at_result_iter_next_string(&iter, &ind_str))
-	    return;
+		if (!g_at_result_iter_next_string(&iter, &ind_str))
+			return;
 
-	  ofono_netreg_reject_cause_notify(netreg, ind_str);
+		ofono_netreg_reject_cause_notify(netreg, ind_str);
 	}
 	else if (g_str_equal("rssi", ind_str)) {
 
-	  if (!g_at_result_iter_next_number(&iter, &strength))
-      return;
+		if (!g_at_result_iter_next_number(&iter, &strength))
+			return;
 
-    if (strength == nd->signal_invalid)
-      strength = -1;
-    else
-      strength = (strength * 100) / (nd->signal_max - nd->signal_min);
+		if (strength == nd->signal_invalid)
+			strength = -1;
+		else
+			strength = (strength * 100) / (nd->signal_max - nd->signal_min);
 
-    ofono_netreg_strength_notify(netreg, strength);
+		ofono_netreg_strength_notify(netreg, strength);
 	}
 }
 
@@ -1956,6 +1956,27 @@ static gboolean gemalto_csq_query(gpointer user_data)
 
 void manage_csq_source(struct ofono_netreg *netreg, gboolean add);
 
+const char *ceer_prefix[] = { "+CEER:", NULL };
+static void ceer_response_cb(gboolean ok, GAtResult *result, gpointer user_data)
+{
+	struct ofono_netreg *netreg = user_data;
+	struct netreg_data *nd = ofono_netreg_get_data(netreg);
+	GAtResultIter iter;
+	const char *ceer_str;
+
+	g_at_result_iter_init(&iter, result);
+
+	DBG("");
+	/* Response: +CEER: Unknown or missing APN */
+	if (ok && g_at_result_iter_next(&iter, ceer_prefix[0])) {
+		if (g_at_result_iter_next_unquoted_string(&iter, &ceer_str)) {
+			ofono_netreg_reject_cause_notify(netreg, ceer_str);
+			g_at_chat_send(nd->chat, "AT+CEER=0", none_prefix,
+					NULL, NULL, NULL);
+		}
+	}
+}
+
 static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 {
 	struct ofono_netreg *netreg = user_data;
@@ -2143,6 +2164,7 @@ static void at_creg_set_cb(gboolean ok, GAtResult *result, gpointer user_data)
 		g_at_chat_register(nd->chat, "+CESQ:", cesq_notify, FALSE, netreg, NULL); /* Register for +CESQ */
 		manage_csq_source(netreg, TRUE); /* start periodic polling of CSQ/CESQ */
 		g_at_chat_send(nd->chat, "AT^SIND=\"ceer\",1,99", none_prefix, NULL, NULL, NULL); /* Activate reject cause report */
+		g_at_chat_send(nd->chat, "AT+CEER", ceer_prefix, ceer_response_cb, netreg, NULL); /* Activate reject cause report */
 		break;
 	case OFONO_VENDOR_ZTE_VANILLA:
 		nd->signal_min = 0;

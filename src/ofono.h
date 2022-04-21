@@ -191,6 +191,7 @@ void __ofono_modem_foreach_registered_atom(struct ofono_modem *modem,
 void *__ofono_atom_get_data(struct ofono_atom *atom);
 const char *__ofono_atom_get_path(struct ofono_atom *atom);
 struct ofono_modem *__ofono_atom_get_modem(struct ofono_atom *atom);
+void __ofono_atom_reset_data(struct ofono_atom *atom);
 
 #define __ofono_atom_find(enum_type, modem)			\
 ({								\

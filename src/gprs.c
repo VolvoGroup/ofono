@@ -3077,6 +3077,8 @@ static void gprs_remove(struct ofono_atom *atom)
 		gprs->driver->remove(gprs);
 
 	g_free(gprs);
+
+	__ofono_atom_reset_data(atom);
 }
 
 struct ofono_gprs *ofono_gprs_create(struct ofono_modem *modem,
@@ -3375,15 +3377,19 @@ static void ofono_gprs_finish_register(struct ofono_gprs *gprs)
 static void spn_read_cb(const char *spn, const char *dc, void *data)
 {
 	struct ofono_gprs *gprs	= data;
-	struct ofono_modem *modem = __ofono_atom_get_modem(gprs->atom);
-	struct ofono_sim *sim = __ofono_atom_find(OFONO_ATOM_TYPE_SIM, modem);
+	struct ofono_modem *modem;
+	struct ofono_sim *sim;
 
-	provision_contexts(gprs, ofono_sim_get_mcc(sim),
-					ofono_sim_get_mnc(sim), spn);
+	if (gprs->atom) {
+		modem = __ofono_atom_get_modem(gprs->atom);
+		sim = __ofono_atom_find(OFONO_ATOM_TYPE_SIM, modem);
+		provision_contexts(gprs, ofono_sim_get_mcc(sim),
+						ofono_sim_get_mnc(sim), spn);
 
-	ofono_sim_remove_spn_watch(sim, &gprs->spn_watch);
+		ofono_sim_remove_spn_watch(sim, &gprs->spn_watch);
 
-	ofono_gprs_finish_register(gprs);
+		ofono_gprs_finish_register(gprs);
+	}
 }
 
 struct ofono_modem *ofono_gprs_get_modem(struct ofono_gprs *gprs)
@@ -3414,6 +3420,7 @@ finish:
 void ofono_gprs_remove(struct ofono_gprs *gprs)
 {
 	__ofono_atom_free(gprs->atom);
+	gprs->atom = NULL;
 }
 
 void ofono_gprs_set_data(struct ofono_gprs *gprs, void *data)
