@@ -2427,6 +2427,8 @@ static void gemalto_initialize(struct ofono_modem *modem)
 								modem, NULL);
 	ofono_devinfo_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
 
+	gemalto_exec_stored_cmd(modem, "initialize");
+
 	g_at_chat_send(data->app,
 		"AT^SCFG=\"MEopMode/PwrSave\",\"enabled\",52,50", none_prefix,
 							NULL, NULL, NULL);
