@@ -2077,8 +2077,6 @@ static void gemalto_ciev_euicc_notify(GAtResultIter *iter,
 static void gemalto_ciev_ecaller_notify(GAtResultIter *iter,
 					struct ofono_modem *modem)
 {
-	struct gemalto_data *data = ofono_modem_get_data(modem);
-	struct ofono_sim *sim = data->sim;
 	int ecaller_status;
 
 	if (!g_at_result_iter_next_number(iter, &ecaller_status))
@@ -2092,7 +2090,6 @@ static void gemalto_ciev_ecaller_notify(GAtResultIter *iter,
 static void gemalto_ciev_ecallco_notify(GAtResultIter *iter,
 					struct ofono_modem *modem)
 {
-	struct gemalto_data *data = ofono_modem_get_data(modem);
 	int ecallco_status;
 
 	if (!g_at_result_iter_next_number(iter, &ecallco_status))
@@ -2429,6 +2426,7 @@ static void gemalto_initialize(struct ofono_modem *modem)
 	g_at_chat_register(data->app, "^EXIT", gemalto_exit_urc_notify, FALSE,
 								modem, NULL);
 	ofono_devinfo_create(modem, OFONO_VENDOR_GEMALTO, "atmodem", data->app);
+
 	g_at_chat_send(data->app,
 		"AT^SCFG=\"MEopMode/PwrSave\",\"enabled\",52,50", none_prefix,
 							NULL, NULL, NULL);
@@ -2564,6 +2562,7 @@ static int gemalto_probe_device(void *user_data)
 	data->channel = NULL;
 	g_at_chat_set_debug(data->tmp_chat, gemalto_at_debug, "App: ");
 	data->open_cb(TRUE, modem);
+
 	return FALSE; /* kill the timer: finished */
 
 failed:
