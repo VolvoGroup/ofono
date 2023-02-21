@@ -729,6 +729,7 @@ static void sim_state_watch(enum ofono_sim_state new_state, void *user)
 	switch (new_state) {
 	case OFONO_SIM_STATE_NOT_PRESENT:
 		modem_change_state(modem, MODEM_STATE_PRE_SIM);
+	case OFONO_SIM_STATE_UNKNOWN:
 	case OFONO_SIM_STATE_INSERTED:
 	case OFONO_SIM_STATE_RESETTING:
 		break;

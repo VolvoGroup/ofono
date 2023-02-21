@@ -310,14 +310,13 @@ static void gemalto_ecall(struct ofono_voicecall *vc,
 {
 	struct cb_data *cbd = cb_data_new(cb, data);
 	char buf[256];
-	size_t len;
 
 	cbd->user = vc;
 
 	if (strlen(ph->number))
-		len = snprintf(buf, sizeof(buf), "AT+CECALL=0,%s", ph->number);
+		(void)snprintf(buf, sizeof(buf), "AT+CECALL=0,%s", ph->number);
 	else
-		len = snprintf(buf, sizeof(buf), "AT+CECALL=2");
+		(void)snprintf(buf, sizeof(buf), "AT+CECALL=2");
 
 	gemalto_call_common(buf, vc, generic_cb, 0, cb, data);
 }

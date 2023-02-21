@@ -1620,7 +1620,6 @@ static DBusMessage *manager_dial(DBusConnection *conn,
 static int voicecall_ecall(struct ofono_voicecall *vc, const char *number,
           ofono_voicecall_cb_t cb, void *data)
 {
-  struct ofono_modem *modem = __ofono_atom_get_modem(vc->atom);
   struct ofono_phone_number ph;
 
   if (vc->driver->ecall == NULL)
@@ -3125,6 +3124,8 @@ static void sim_state_watch(enum ofono_sim_state new_state, void *user)
 		break;
 	case OFONO_SIM_STATE_LOCKED_OUT:
 		voicecall_close_settings(vc);
+		break;
+	case OFONO_SIM_STATE_UNKNOWN:
 		break;
 	}
 }
