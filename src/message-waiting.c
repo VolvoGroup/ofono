@@ -425,7 +425,8 @@ static void mw_cphs_mwis_read_cb(int ok, int total_length, int record,
 	unsigned char indication;
 
 	if (!ok || total_length < 1) {
-		DBG("No CPHS MWIS on SIM");
+		DBG("Unable to read CPHS MWIS from SIM");
+
 		mw->ef_cphs_mwis_length = 0;
 		return;
 	}
@@ -466,11 +467,9 @@ static void mw_mwis_read_cb(int ok, int total_length, int record,
 	struct mailbox_state info;
 
 	if (!ok || record_length < 5) {
-		ofono_error("Unable to read waiting messages numbers "
-				"from SIM");
+		DBG("Unable to read MWIS from SIM");
 
 		mw->efmwis_length = 0;
-
 		return;
 	}
 
@@ -501,8 +500,7 @@ static void mw_cphs_mbdn_read_cb(int ok, int total_length, int record,
 	const char *value;
 
 	if (!ok || record_length < 14 || total_length < record_length) {
-		ofono_error("Unable to read CPHS mailbox dialling numbers "
-				"from SIM");
+		DBG("Unable to read CPHS MBDN from SIM");
 
 		mw->ef_cphs_mbdn_length = 0;
 		mw->cphs_mbdn_not_provided = TRUE;
@@ -549,8 +547,7 @@ static void mw_mbdn_read_cb(int ok, int total_length, int record,
 	const char *value;
 
 	if (!ok || record_length < 14 || total_length < record_length) {
-		ofono_error("Unable to read mailbox dialling numbers "
-				"from SIM");
+		DBG("Unable to read MBDN from SIM");
 
 		mw->efmbdn_length = 0;
 		mw->mbdn_not_provided = TRUE;
@@ -624,12 +621,10 @@ static void mw_mbi_read_cb(int ok, int total_length, int record,
 	int i, err;
 
 	if (!ok || record_length < 4) {
-		ofono_error("Unable to read mailbox identifies "
-				"from SIM");
+		DBG("Unable to read MBI from SIM");
 
 		mw->efmbdn_length = 0;
 		mw->mbdn_not_provided = TRUE;
-
 		goto out;
 	}
 
