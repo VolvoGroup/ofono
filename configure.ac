@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([ofono],[230217])
+AC_INIT([ofono],[230228])
 
 AM_INIT_AUTOMAKE([foreign subdir-objects color-tests])
 AC_CONFIG_HEADERS(config.h)
